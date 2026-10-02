@@ -48,7 +48,7 @@ Out of scope here: rule JSON syntax (`04`), table DDL (`05`/`03`), event and API
 - **FR-19** A threshold set belongs to a rule version. Changing thresholds produces a new threshold-set version with its own approval; whether the rule logic version also changes is decided in `04` (OQ-5).
 
 ### 3.4 Run orchestration (PR-17…22, 45, 46)
-- **FR-20** A **run** is created per `(cadence, period, mode)` where cadence ∈ {DAILY (period = business date), MONTHLY (period = calendar month, started after the month's last daily run succeeded)} and mode ∈ {PRODUCTION, BACKTEST, TEST}. Only one PRODUCTION run per cadence and period may be RUNNING; a second request is queued or refused. A DAILY run evaluates rules with cadence DAILY; a MONTHLY run evaluates rules with cadence MONTHLY and performs the monthly alert cycle (FR-41).
+- **FR-20** A **run** is created per `(cadence, period, mode)` where cadence ∈ {DAILY (period = business date), MONTHLY (period = calendar month, started after the month's last daily run succeeded)} and mode ∈ {PRODUCTION, BACKTEST, TEST}. Only one PRODUCTION run per cadence and period may be RUNNING; a second request is queued or refused. A DAILY run evaluates rules with cadence DAILY; a MONTHLY run evaluates rules with cadence MONTHLY and performs the monthly alert cycle (FR-41). **A MONTHLY run may be started on any day; its period is always the previous completed calendar month relative to its start date (D-8)** and the period can be given explicitly only for reprocessing. It is BLOCKED until every DAILY run of that month has finished (SUCCEEDED, or PARTIAL accepted by an operator), unless an operator overrides with a recorded reason.
 - **FR-21** At start, the engine writes a **run manifest**: rule versions and threshold sets, field-catalogue version, reference-data versions, data snapshot identifier (Delta table versions of every input table), code version, parameters. The manifest is immutable.
 - **FR-22** Run states: PENDING → RUNNING → SUCCEEDED | PARTIAL | FAILED | BLOCKED | CANCELLED. PARTIAL means at least one rule failed and at least one succeeded.
 - **FR-23** Rules are evaluated independently. A rule error (invalid data, query failure, timeout) is recorded with rule id, version, error and query id; other rules continue (PR-20). The run is PARTIAL and the failed rules are listed.
@@ -76,10 +76,13 @@ Out of scope here: rule JSON syntax (`04`), table DDL (`05`/`03`), event and API
 
 ### 3.7 Alert generation (PR-24, 25, 28)
 - **FR-41** **Alert policy (D-4).** Detections are events per rule. For each **cycle** the engine groups the cycle's *new, unconsumed* detections (FR-36, FR-37) by the **primary party** of the detection's account(s) and creates **one alert per primary party per cycle**, containing every grouped detection as a child with its evidence.
-  - Cycles: the DAILY run forms the *daily cycle* from DAILY-cadence detections of that business date. The MONTHLY run forms the *monthly cycle* from MONTHLY-cadence detections of the month **plus any DAILY-cadence detections of that month that did not produce an alert** (below threshold), so sub-threshold behaviour accumulates.
+  - Cycle assignment: a detection's **cycle date is the business date of its latest trigger transaction** (not the run date). A transaction that arrives late (FR-6) therefore lands in the daily cycle of its own business date.
+  - Cycles: the DAILY run forms the *daily cycle* for its business date from the DAILY-cadence detections whose cycle date is that date. The MONTHLY run forms the *monthly cycle* from MONTHLY-cadence detections of the month **plus any DAILY-cadence detections of that month that did not produce an alert** (below threshold), so sub-threshold behaviour accumulates.
   - **Score**: each detection earns *points* = rule-version base points × severity factor (from the threshold set), with the repeat discount, cross-product bonus and KYC bonus defined by the alert policy version (reference: baseline `003-scoring-and-alerts.md`). The party's cycle score is the sum.
-  - **Threshold**: an alert is created only when the party's cycle score ≥ the policy threshold. Policy parameters (points, factors, bonuses, threshold) live in a versioned, governed **alert policy** (approval as for rules); the policy version is recorded in the run manifest and on the alert.
-  - **Consumption**: a detection belongs to at most one alert. Detections that did not reach the threshold stay unconsumed and are carried to the monthly cycle (above), after which they expire.
+  - **Threshold** (D-5): initial values are **50 for a daily cycle and 100 for the monthly cycle**. An alert is created only when the party's cycle score ≥ the threshold for that cycle type. Policy parameters (points, factors, bonuses, threshold) live in a versioned, governed **alert policy** (approval as for rules); the policy version is recorded in the run manifest and on the alert.
+  - **Consumption**: a detection belongs to at most one alert. Detections that did not reach the threshold stay unconsumed and are carried to the monthly cycle (above); after the monthly cycle they **expire** (D-7) and never count again.
+  - **Late data**: when a restated or late transaction (FR-6) creates a new detection in a past daily cycle that already produced an alert, the party's unconsumed detections for that cycle are re-scored; if the score ≥ threshold, a **supplemental alert** is created for that party and cycle (sequence +1, `origin = REPROCESS`). Detections already consumed are not recounted.
+  - **No merging** (D-6): the engine never merges into or links to alerts of other cycles or dates; one alert per primary party per business date. Case consolidation is the consumer's responsibility.
   - Secondary holders (joint, authorised user, co-borrower) are listed on the alert with roles and the initiating party; the alert is addressed to the primary party (FR-35).
   - SHADOW-rule detections never enter an alert (FR-45).
 - **FR-42** Severity comes from the rule version (and optionally the threshold set band, e.g. HIGH when ratio ≥ 2×). The alert records the rule's severity and the band that determined it.
@@ -145,8 +148,14 @@ Detections and alerts
 - **AC-24** (FR-45) Given a SHADOW rule matching, Then a detection with `shadow = true` exists, and no alert or outbox row.
 - **AC-35** (FR-41) Given a party P with accounts A1 and A2 and detections from three different rules in one daily cycle with score ≥ threshold, Then exactly one alert is created for P containing three child detections, and each detection is marked consumed by it.
 - **AC-36** (FR-41) Given joint account J with primary P and joint holder Q, and a detection on J, Then the alert is addressed to P and lists Q with role JOINT; no alert is created for Q.
-- **AC-37** (FR-41) Given a party whose daily scores are 20, 18 and 22 (threshold 35) on three days of the month, When the MONTHLY run executes, Then the three unconsumed daily detections are included and the monthly alert is created if the combined score ≥ threshold.
+- **AC-37** (FR-41) Given a party whose daily scores are 40, 35 and 30 (each below the daily threshold 50) in one month, When the MONTHLY run executes, Then the three unconsumed daily detections are included, the combined score 105 ≥ 100, and a monthly alert is created; given 20, 18 and 22 (total 60), Then no alert is created.
 - **AC-38** (FR-41) Given a detection already consumed by a daily alert, Then it is not counted again in the monthly cycle.
+- **AC-40** (FR-41/D-5) Given a daily cycle score of 49.9, Then no alert; given 50.0, Then an alert. Given a monthly score of 99.9, Then no alert; given 100.0, Then an alert.
+- **AC-41** (FR-41) Given a transaction dated business date D−2 arrives today and creates a detection, Then the detection's cycle date is D−2, not today.
+- **AC-42** (FR-41) Given a party already alerted for D−2 and a late transaction creating a new detection in that cycle, When re-scored, Then a supplemental alert (sequence 2, origin REPROCESS) is created only if the unconsumed detections' score ≥ 50, and the already-consumed detections are not recounted.
+- **AC-43** (FR-20/D-8) Given the MONTHLY run is started on the 3rd and, separately, on the 25th of October, Then both evaluate September; given a daily run of September is unfinished, Then the monthly run is BLOCKED unless overridden with a reason.
+- **AC-44** (FR-41/D-7) Given unconsumed daily detections of September after the September monthly cycle, When the October cycle runs, Then they are not included.
+- **AC-45** (FR-41/D-6) Given party P has an alert for 2026-10-01 and new detections on 2026-10-02 meeting the threshold, Then a separate alert for 2026-10-02 is created with no link to the first.
 - **AC-39** (FR-41/43) Given the daily run for D is repeated with identical detections, Then the existing alert (same `alertKey`) is returned and no second alert or outbox event is created.
 
 Persistence
@@ -176,7 +185,9 @@ outbox, audit (`03`, `05`, `06`); events (`07`); APIs (`08`).
 - Calendar-window firing (FR-29) addresses the prototype's month-end split (baseline Q-09) only partly; rolling windows are the recommended default for structuring-type typologies.
 
 ## 7. Model risk impact
-No change to the alerted population is claimed. Differences versus the prototype baseline come from: novelty rule
+**Threshold scale warning.** In the prototype, party scores are monthly sums of points (rule base points 12–30, times severity, plus bonuses; ML events 10–25). On that scale the six-month results are: score ≥ 35 → 321 alerts; ≥ 50 → 152; ≥ 75 → 64; **≥ 100 → 24** (about 4 per month; maximum observed 168). A monthly threshold of 100 on the prototype's scale would therefore raise about 7% of today's alert volume, and a daily threshold of 50 on much smaller daily sums would alert rarely except for a few strong rules. The thresholds 50/100 are acceptable only if the points scale is recalibrated by backtest to a target volume (OQ-F13), or if the volume reduction is intended. The conformance run (`01` AC-14) will use the prototype's scale and threshold 35 to validate the engine's mechanics; production values are set separately and documented.
+
+No other change to the alerted population is claimed. Differences versus the prototype baseline come from: novelty rule
 (fewer repeat alerts), restatement, effective-dated enrichment, set-based window semantics. Each is measured in the
 conformance run (`01` AC-14) and recorded per rule.
 
@@ -201,10 +212,14 @@ conformance run (`01` AC-14) and recorded per rule.
 - [ ] **OQ-F6** Reporting currency and FX rate source/rate date convention.
 - [ ] **OQ-F7** Should alert severity be able to rise on repeat behaviour (instead of suppression)?
 - [x] **OQ-F8** Resolved by D-4: alerts are per primary party per cycle.
-- [ ] **OQ-F9** Daily-cycle alert threshold: same as the monthly threshold (prototype: 35), or different because a day is a smaller sample? Needs backtest evidence.
-- [ ] **OQ-F10** Should a daily alert for a party with an already-open alert from the same month be linked or merged (the engine does not know case state)? Default: separate alert linked via `relatedAlerts`.
-- [ ] **OQ-F11** Expiry of unconsumed sub-threshold detections after the monthly cycle: confirm they do not carry into later months.
-- [ ] **OQ-F12** Monthly run timing (e.g. business day +2) and treatment of late data after it (restatement, FR-6).
+- [x] **OQ-F9** Resolved (D-5): thresholds 50 daily, 100 monthly.
+- [x] **OQ-F10** Resolved (D-6): separate alert per party per business date; no merging or linking; consolidation is the consumer's job.
+- [x] **OQ-F11** Resolved (D-7): unconsumed detections expire after the monthly cycle.
+- [x] **OQ-F12** Resolved (D-8): monthly run starts any day and evaluates the previous completed month.
+- [ ] **OQ-F13** **Points calibration.** Thresholds 50/100 only make sense with a defined points scale (§7). Which scale: the prototype's, or recalibrated by backtest to a target volume?
+- [ ] **OQ-F14** "Monthly security blanket rule": please define what this term means (my reading: a monthly blanket cycle that evaluates the whole previous month). Until confirmed I have modelled only the "previous completed month" behaviour.
+- [ ] **OQ-F15** Late-data supplemental alerts (FR-41): is a second alert for an already-alerted party/date acceptable to the consumer, or should late detections only be reported in the next cycle?
+- [ ] **OQ-F16** Which transaction sets the cycle date when a monthly-cadence detection has triggers spanning the month (FR-41 uses the latest trigger; confirm for monthly rules it is simply the month).
 
 ## 10. Implementation notes
 Not applicable until `IMPLEMENTED`.

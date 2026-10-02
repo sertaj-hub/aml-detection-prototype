@@ -102,7 +102,7 @@ Requirement keywords: **must** = mandatory for version 1; **should** = desirable
 - **PR-16** Rules must be tagged with the typology they detect and the products they apply to.
 
 ### 5.4 Evaluation
-- **PR-17** The engine must evaluate all ACTIVE rule versions in a **daily** run (per business date) and a **monthly** run (per calendar-month close); each rule declares its cadence (DAILY or MONTHLY).
+- **PR-17** The engine must evaluate all ACTIVE rule versions in a **daily** run (per business date) and a **monthly** run (per calendar-month close); each rule declares its cadence (DAILY or MONTHLY). A monthly run may be started on any day and always evaluates the previous completed calendar month (D-8).
 - **PR-18** Evaluation must be deterministic: the same rule versions, data snapshot and reference-data versions must produce identical detections.
 - **PR-19** Each run must record the data snapshot identifier, rule versions, reference-data versions, start/end time, status and counts.
 - **PR-20** A failure in one rule must be isolated: it is recorded and reported, and other rules continue.
@@ -223,6 +223,10 @@ before/after metrics.
 | D-2 | Lakehouse = **Databricks** (Delta tables, Spark SQL / PySpark). DuckDB is used only for local development and automated tests on the same SQL subset | OQ-1 | 05, 09 |
 | D-3 | Volume: **~1 million transactions/day, 13 months of history** (~400 million rows) | OQ-3 | 09 |
 | D-4 | **Detections are per rule (event per rule); alerts are per primary party of the account.** Detections for a party in a cycle are consolidated into one alert (daily cycle, monthly cycle). A detection belongs to at most one alert | OQ-4 | 02, 06 |
+| D-5 | Initial alert thresholds: **50 for the daily cycle, 100 for the monthly cycle** (policy parameters, versioned and governed). The **daily cycle is the business date of the transaction(s)**, not the run date | OQ-F9 | 02, 06 |
+| D-6 | An alert is created per primary party per business date; the engine does **not** merge with or link to other open alerts. Consolidation of alerts into cases is the consumer's job and is out of scope | OQ-F10 | 02, 06 |
+| D-7 | Unconsumed (below-threshold) daily detections are included in the monthly cycle, then **expire** | OQ-F11 | 02 |
+| D-8 | The monthly run may be started on any day; it always evaluates the **previous completed calendar month** | OQ-F12 | 02 |
 
 ## 13. Open questions
 - [x] **OQ-1** Lakehouse: Databricks (D-2).
