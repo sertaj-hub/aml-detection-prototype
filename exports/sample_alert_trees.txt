@@ -1,0 +1,237 @@
+ALERT A-00001 | 2026-04 | Party P004897 Cheyenne Cline | Score 168 / threshold 35
+  MASS, Administrative Assistant, KYC LOW, income $52,100, expected cash $210/mo, customer since 2011-10-07
+├─ CHECKING ACC0010483  +167.9  (100% of alert)
+│  ├─ ML M-ANOM-DEP Deposit behaviour anomaly  +24.4
+│  │   Anomaly score 0.794 - top 0.04% of deposit account-months in 2026-04
+│  │   Reasons: External credits vs declared income: 30.0x (typical 0.8x) | Cash deposits vs expected cash: 561.3x (typical 0.0x) | Outgoing wires: $102,703 (typical $0)
+│  │   └─ T001249743 2026-04-09 CASH_DEPOSIT           $  9,792.59 BRANCH    [+1.1]
+│  │   └─ T001249749 2026-04-15 CASH_DEPOSIT           $  9,854.87 BRANCH    [+1.1]
+│  │   └─ T001249745 2026-04-16 WIRE_OUT               $ 31,075.26 WIRE     -> Kevin Thomas (US)  [+3.4]
+│  │   └─ T001249748 2026-04-20 CASH_DEPOSIT           $  9,714.20 BRANCH    [+1.1]
+│  │   └─ T001249751 2026-04-24 WIRE_OUT               $ 38,813.23 WIRE     -> Rebecca Miller (US)  [+4.2]
+│  │   └─ T001249756 2026-04-30 WIRE_OUT               $ 32,814.54 WIRE     -> Sharon Martinez (US)  [+3.6]
+│  │   └─ ... 12 more transactions
+│  ├─ RULE R-DEP-01 Structuring  +35.0
+│  │   5 cash deposits $8,060-$9,855 in 6 days (total $45,992)
+│  │   (rule: >=3 cash deposits of $8,000-$9,999 into one account within 7 days)
+│  │   └─ T001249743 2026-04-09 CASH_DEPOSIT           $  9,792.59 BRANCH    [+7.5]
+│  │   └─ T001249742 2026-04-10 CASH_DEPOSIT           $  8,059.62 ATM       [+6.1]
+│  │   └─ T001249744 2026-04-10 CASH_DEPOSIT           $  9,483.15 BRANCH    [+7.2]
+│  │   └─ T001249741 2026-04-11 CASH_DEPOSIT           $  8,802.16 BRANCH    [+6.7]
+│  │   └─ T001249749 2026-04-15 CASH_DEPOSIT           $  9,854.87 BRANCH    [+7.5]
+│  ├─ RULE R-DEP-01 Structuring  +8.8
+│  │   5 cash deposits $8,156-$9,714 in 7 days (total $43,623)
+│  │   (rule: >=3 cash deposits of $8,000-$9,999 into one account within 7 days)
+│  │   └─ T001249750 2026-04-18 CASH_DEPOSIT           $  8,648.10 ATM       [+1.7]
+│  │   └─ T001249746 2026-04-19 CASH_DEPOSIT           $  8,172.25 BRANCH    [+1.6]
+│  │   └─ T001249748 2026-04-20 CASH_DEPOSIT           $  9,714.20 BRANCH    [+1.9]
+│  │   └─ T001249747 2026-04-20 CASH_DEPOSIT           $  8,155.97 ATM       [+1.6]
+│  │   └─ T001249755 2026-04-24 CASH_DEPOSIT           $  8,932.46 BRANCH    [+1.8]
+│  ├─ RULE R-DEP-01 Structuring  +7.5
+│  │   3 cash deposits $9,258-$9,653 in 2 days (total $28,257)
+│  │   (rule: >=3 cash deposits of $8,000-$9,999 into one account within 7 days)
+│  │   └─ T001249752 2026-04-26 CASH_DEPOSIT           $  9,346.34 BRANCH    [+2.5]
+│  │   └─ T001249753 2026-04-27 CASH_DEPOSIT           $  9,653.27 ATM       [+2.6]
+│  │   └─ T001249754 2026-04-27 CASH_DEPOSIT           $  9,257.85 ATM       [+2.5]
+│  ├─ RULE R-DEP-02 Rapid movement of funds  +30.4
+│  │   $37,190 in, $32,815 (88%) out within 6 days
+│  │   (rule: External credits >= $20,000 within 3 days, and >= 80% debited out within the following 3 days)
+│  │   └─ T001249755 2026-04-24 CASH_DEPOSIT           $  8,932.46 BRANCH    [+3.9]
+│  │   └─ T001249752 2026-04-26 CASH_DEPOSIT           $  9,346.34 BRANCH    [+4.1]
+│  │   └─ T001249753 2026-04-27 CASH_DEPOSIT           $  9,653.27 ATM       [+4.2]
+│  │   └─ T001249754 2026-04-27 CASH_DEPOSIT           $  9,257.85 ATM       [+4.0]
+│  │   └─ T001249756 2026-04-30 WIRE_OUT               $ 32,814.54 WIRE     -> Sharon Martinez (US)  [+14.2]
+│  ├─ RULE R-DEP-05 Cash inconsistent with profile  +30.0
+│  │   $117,873 cash in 2026-04 vs expected $210/month (561.3x)
+│  │   (rule: Monthly cash deposits >= $10,000 and >= 3x the party's expected monthly cash)
+│  │   └─ T001249743 2026-04-09 CASH_DEPOSIT           $  9,792.59 BRANCH    [+2.5]
+│  │   └─ T001249744 2026-04-10 CASH_DEPOSIT           $  9,483.15 BRANCH    [+2.4]
+│  │   └─ T001249749 2026-04-15 CASH_DEPOSIT           $  9,854.87 BRANCH    [+2.5]
+│  │   └─ T001249748 2026-04-20 CASH_DEPOSIT           $  9,714.20 BRANCH    [+2.5]
+│  │   └─ T001249752 2026-04-26 CASH_DEPOSIT           $  9,346.34 BRANCH    [+2.4]
+│  │   └─ T001249753 2026-04-27 CASH_DEPOSIT           $  9,653.27 ATM       [+2.5]
+│  │   └─ ... 7 more transactions
+│  ├─ RULE R-DEP-06 Funnel / many-to-one  +31.9
+│  │   6 inbound credits from 5 sources ($44,442), 233% moved out in 2026-04
+│  │   (rule: >= 6 inbound credits from >= 4 distinct sources in a month totalling >= $8,000, with >= 70% moved out)
+│  │   └─ T001249749 2026-04-15 CASH_DEPOSIT           $  9,854.87 BRANCH    [+2.1]
+│  │   └─ T001249745 2026-04-16 WIRE_OUT               $ 31,075.26 WIRE     -> Kevin Thomas (US)  [+6.7]
+│  │   └─ T001249751 2026-04-24 WIRE_OUT               $ 38,813.23 WIRE     -> Rebecca Miller (US)  [+8.4]
+│  │   └─ T001249755 2026-04-24 CASH_DEPOSIT           $  8,932.46 BRANCH    [+1.9]
+│  │   └─ T001249752 2026-04-26 CASH_DEPOSIT           $  9,346.34 BRANCH    [+2.0]
+│  │   └─ T001249756 2026-04-30 WIRE_OUT               $ 32,814.54 WIRE     -> Sharon Martinez (US)  [+7.1]
+│  │   └─ ... 6 more transactions
+├─ CD ACC0010484 (no hits)
+├─ CREDIT_CARD ACC0010485 (no hits)
+
+ALERT A-00053 | 2026-05 | Party P001697 Barbara Brown | Score 160 / threshold 35
+  MASS, Administrative Assistant, KYC MEDIUM, income $63,700, expected cash $260/mo, customer since 2013-09-02
+  Linked secondary holders: P005590 (JOINT)
+├─ CHECKING ACC0003646  +159.8  (100% of alert)
+│  ├─ ML M-ANOM-DEP Deposit behaviour anomaly  +24.8
+│  │   Anomaly score 0.810 - top 0.01% of deposit account-months in 2026-05
+│  │   Reasons: External credits vs declared income: 20.9x (typical 0.8x) | International wires: $32,352 (typical $0) | Cash deposits vs expected cash: 303.3x (typical 0.0x)
+│  │   └─ T001252033 2026-05-03 CASH_DEPOSIT           $  8,933.99 BRANCH    by P005590  [+1.9]
+│  │   └─ T001252031 2026-05-06 CASH_DEPOSIT           $  9,053.80 BRANCH    by P005590  [+1.9]
+│  │   └─ T001252036 2026-05-14 CASH_DEPOSIT           $  9,315.70 BRANCH    by P005590  [+2.0]
+│  │   └─ T001252035 2026-05-18 CASH_DEPOSIT           $  9,234.91 BRANCH    by P005590  [+2.0]
+│  │   └─ T001252039 2026-05-21 WIRE_OUT               $ 32,352.16 WIRE     -> Erin Ramirez (IR)  by P005590  [+6.9]
+│  │   └─ T001252042 2026-05-27 CASH_DEPOSIT           $  9,190.28 BRANCH    by P005590  [+1.9]
+│  │   └─ ... 7 more transactions
+│  ├─ RULE R-DEP-01 Structuring  +30.0
+│  │   3 cash deposits $8,246-$9,054 in 4 days (total $26,234)
+│  │   (rule: >=3 cash deposits of $8,000-$9,999 into one account within 7 days)
+│  │   └─ T001252032 2026-05-02 CASH_DEPOSIT           $  8,245.82 BRANCH    by P005590  [+9.4]
+│  │   └─ T001252033 2026-05-03 CASH_DEPOSIT           $  8,933.99 BRANCH    by P005590  [+10.2]
+│  │   └─ T001252031 2026-05-06 CASH_DEPOSIT           $  9,053.80 BRANCH    by P005590  [+10.3]
+│  ├─ RULE R-DEP-01 Structuring  +7.5
+│  │   3 cash deposits $8,720-$9,316 in 4 days (total $27,271)
+│  │   (rule: >=3 cash deposits of $8,000-$9,999 into one account within 7 days)
+│  │   └─ T001252036 2026-05-14 CASH_DEPOSIT           $  9,315.70 BRANCH    by P005590  [+2.6]
+│  │   └─ T001252038 2026-05-17 CASH_DEPOSIT           $  8,720.04 BRANCH    by P005590  [+2.4]
+│  │   └─ T001252035 2026-05-18 CASH_DEPOSIT           $  9,234.91 BRANCH    by P005590  [+2.5]
+│  ├─ RULE R-DEP-03 High-risk geography wire  +30.0
+│  │   1 wire(s) totalling $32,352 with IR (largest $32,352)
+│  │   (rule: Any wire >= $5,000 with a high-risk country, or >= 3 high-risk-country wires in a month)
+│  │   └─ T001252039 2026-05-21 WIRE_OUT               $ 32,352.16 WIRE     -> Erin Ramirez (IR)  by P005590  [+30.0]
+│  ├─ RULE R-DEP-05 Cash inconsistent with profile  +30.0
+│  │   $78,851 cash in 2026-05 vs expected $260/month (303.3x)
+│  │   (rule: Monthly cash deposits >= $10,000 and >= 3x the party's expected monthly cash)
+│  │   └─ T001252033 2026-05-03 CASH_DEPOSIT           $  8,933.99 BRANCH    by P005590  [+3.4]
+│  │   └─ T001252031 2026-05-06 CASH_DEPOSIT           $  9,053.80 BRANCH    by P005590  [+3.4]
+│  │   └─ T001252036 2026-05-14 CASH_DEPOSIT           $  9,315.70 BRANCH    by P005590  [+3.5]
+│  │   └─ T001252038 2026-05-17 CASH_DEPOSIT           $  8,720.04 BRANCH    by P005590  [+3.3]
+│  │   └─ T001252035 2026-05-18 CASH_DEPOSIT           $  9,234.91 BRANCH    by P005590  [+3.5]
+│  │   └─ T001252042 2026-05-27 CASH_DEPOSIT           $  9,190.28 BRANCH    by P005590  [+3.5]
+│  │   └─ ... 3 more transactions
+│  ├─ RULE R-DEP-06 Funnel / many-to-one  +37.5
+│  │   9 inbound credits from 8 sources ($62,095), 91% moved out in 2026-05
+│  │   (rule: >= 6 inbound credits from >= 4 distinct sources in a month totalling >= $8,000, with >= 70% moved out)
+│  │   └─ T001252031 2026-05-06 CASH_DEPOSIT           $  9,053.80 BRANCH    by P005590  [+2.9]
+│  │   └─ T001252034 2026-05-07 WIRE_OUT               $ 22,802.29 WIRE     -> Ashley Prince (US)  by P005590  [+7.2]
+│  │   └─ T001252036 2026-05-14 CASH_DEPOSIT           $  9,315.70 BRANCH    by P005590  [+3.0]
+│  │   └─ T001252035 2026-05-18 CASH_DEPOSIT           $  9,234.91 BRANCH    by P005590  [+2.9]
+│  │   └─ T001252039 2026-05-21 WIRE_OUT               $ 32,352.16 WIRE     -> Erin Ramirez (IR)  by P005590  [+10.2]
+│  │   └─ T001252042 2026-05-27 CASH_DEPOSIT           $  9,190.28 BRANCH    by P005590  [+2.9]
+│  │   └─ ... 10 more transactions
+
+ALERT A-00113 | 2026-06 | Party P001697 Barbara Brown | Score 153 / threshold 35
+  MASS, Administrative Assistant, KYC MEDIUM, income $63,700, expected cash $260/mo, customer since 2013-09-02
+  Linked secondary holders: P005590 (JOINT)
+├─ CHECKING ACC0003646  +153.0  (100% of alert)
+│  ├─ ML M-ANOM-DEP Deposit behaviour anomaly  +24.9
+│  │   Anomaly score 0.816 - top 0.00% of deposit account-months in 2026-06
+│  │   Reasons: External credits vs declared income: 20.0x (typical 0.8x) | International wires: $46,549 (typical $0) | Outgoing wires: $79,008 (typical $0)
+│  │   └─ T001252044 2026-06-04 WIRE_OUT               $ 32,458.72 WIRE     -> Jenny Cardenas (US)  by P005590  [+5.1]
+│  │   └─ T001252047 2026-06-12 CASH_DEPOSIT           $  9,891.49 BRANCH    by P005590  [+1.5]
+│  │   └─ T001252048 2026-06-14 WIRE_OUT               $ 22,945.56 WIRE     -> Hall-Myers Trading (HT)  by P005590  [+3.6]
+│  │   └─ T001252050 2026-06-22 CASH_DEPOSIT           $  8,882.36 BRANCH    by P005590  [+1.4]
+│  │   └─ T001252051 2026-06-24 CASH_DEPOSIT           $  9,340.98 BRANCH    by P005590  [+1.5]
+│  │   └─ T001252052 2026-06-27 WIRE_OUT               $ 23,603.30 WIRE     -> Rivera, Kim and Hull International SA (VG)  by P005590  [+3.7]
+│  │   └─ ... 8 more transactions
+│  ├─ RULE R-DEP-01 Structuring  +32.5
+│  │   4 cash deposits $8,222-$9,190 in 5 days (total $34,207)
+│  │   (rule: >=3 cash deposits of $8,000-$9,999 into one account within 7 days)
+│  │   └─ T001252042 2026-05-27 CASH_DEPOSIT           $  9,190.28 BRANCH    by P005590  [+8.7]
+│  │   └─ T001252040 2026-05-29 CASH_DEPOSIT           $  8,222.44 BRANCH    by P005590  [+7.8]
+│  │   └─ T001252041 2026-06-01 CASH_DEPOSIT           $  8,265.36 BRANCH    by P005590  [+7.8]
+│  │   └─ T001252043 2026-06-01 CASH_DEPOSIT           $  8,528.49 BRANCH    by P005590  [+8.1]
+│  ├─ RULE R-DEP-03 High-risk geography wire  +30.0
+│  │   1 wire(s) totalling $22,946 with HT (largest $22,946)
+│  │   (rule: Any wire >= $5,000 with a high-risk country, or >= 3 high-risk-country wires in a month)
+│  │   └─ T001252048 2026-06-14 WIRE_OUT               $ 22,945.56 WIRE     -> Hall-Myers Trading (HT)  by P005590  [+30.0]
+│  ├─ RULE R-DEP-05 Cash inconsistent with profile  +30.0
+│  │   $76,801 cash in 2026-06 vs expected $260/month (295.4x)
+│  │   (rule: Monthly cash deposits >= $10,000 and >= 3x the party's expected monthly cash)
+│  │   └─ T001252041 2026-06-01 CASH_DEPOSIT           $  8,265.36 BRANCH    by P005590  [+3.2]
+│  │   └─ T001252043 2026-06-01 CASH_DEPOSIT           $  8,528.49 BRANCH    by P005590  [+3.3]
+│  │   └─ T001252047 2026-06-12 CASH_DEPOSIT           $  9,891.49 BRANCH    by P005590  [+3.9]
+│  │   └─ T001252050 2026-06-22 CASH_DEPOSIT           $  8,882.36 BRANCH    by P005590  [+3.5]
+│  │   └─ T001252051 2026-06-24 CASH_DEPOSIT           $  9,340.98 BRANCH    by P005590  [+3.6]
+│  │   └─ T001252053 2026-06-30 CASH_DEPOSIT           $  8,650.09 BRANCH    by P005590  [+3.4]
+│  │   └─ ... 3 more transactions
+│  ├─ RULE R-DEP-06 Funnel / many-to-one  +35.6
+│  │   10 inbound credits from 7 sources ($67,684), 117% moved out in 2026-06
+│  │   (rule: >= 6 inbound credits from >= 4 distinct sources in a month totalling >= $8,000, with >= 70% moved out)
+│  │   └─ T001252044 2026-06-04 WIRE_OUT               $ 32,458.72 WIRE     -> Jenny Cardenas (US)  by P005590  [+7.9]
+│  │   └─ T001252047 2026-06-12 CASH_DEPOSIT           $  9,891.49 BRANCH    by P005590  [+2.4]
+│  │   └─ T001252048 2026-06-14 WIRE_OUT               $ 22,945.56 WIRE     -> Hall-Myers Trading (HT)  by P005590  [+5.6]
+│  │   └─ T001252050 2026-06-22 CASH_DEPOSIT           $  8,882.36 BRANCH    by P005590  [+2.1]
+│  │   └─ T001252052 2026-06-27 WIRE_OUT               $ 23,603.30 WIRE     -> Rivera, Kim and Hull International SA (VG)  by P005590  [+5.7]
+│  │   └─ T001252053 2026-06-30 CASH_DEPOSIT           $  8,650.09 BRANCH    by P005590  [+2.1]
+│  │   └─ ... 11 more transactions
+
+ALERT A-00005 | 2026-04 | Party P001779 Melissa Waters | Score 88 / threshold 35
+  MASS, Administrative Assistant, KYC LOW, income $28,600, expected cash $0/mo, customer since 2023-07-01
+  Linked secondary holders: P005126 (JOINT)
+├─ CHECKING ACC0010738  +87.5  (100% of alert)
+│  ├─ ML M-ANOM-DEP Deposit behaviour anomaly  +23.7
+│  │   Anomaly score 0.776 - top 0.09% of deposit account-months in 2026-04
+│  │   Reasons: External credits vs declared income: 24.9x (typical 0.8x) | Cash deposits vs expected cash: 495.3x (typical 0.0x) | Outgoing wires: $44,338 (typical $0)
+│  │   └─ T001252066 2026-04-01 CASH_DEPOSIT           $  8,099.77 BRANCH    by P005126  [+2.0]
+│  │   └─ T001252068 2026-04-07 WIRE_OUT               $ 13,685.70 WIRE     -> Heather Rojas DDS (US)  by P005126  [+3.3]
+│  │   └─ T001252071 2026-04-18 WIRE_OUT               $ 14,800.71 WIRE     -> Jerome Reid (US)  by P005126  [+3.6]
+│  │   └─ T001252073 2026-04-26 CASH_DEPOSIT           $  8,880.21 BRANCH    by P005126  [+2.1]
+│  │   └─ T001252072 2026-04-29 CASH_DEPOSIT           $  8,975.64 BRANCH    by P005126  [+2.2]
+│  │   └─ T001252074 2026-04-30 WIRE_OUT               $ 15,851.46 WIRE     -> Bonnie Barnes (US)  by P005126  [+3.8]
+│  │   └─ ... 7 more transactions
+│  ├─ RULE R-DEP-05 Cash inconsistent with profile  +30.0
+│  │   $49,534 cash in 2026-04 vs expected $100/month (495.3x)
+│  │   (rule: Monthly cash deposits >= $10,000 and >= 3x the party's expected monthly cash)
+│  │   └─ T001252066 2026-04-01 CASH_DEPOSIT           $  8,099.77 BRANCH    by P005126  [+4.9]
+│  │   └─ T001252067 2026-04-06 CASH_DEPOSIT           $  7,531.42 BRANCH    by P005126  [+4.6]
+│  │   └─ T001252069 2026-04-16 CASH_DEPOSIT           $  7,798.65 BRANCH    by P005126  [+4.7]
+│  │   └─ T001252070 2026-04-16 CASH_DEPOSIT           $  7,799.65 BRANCH    by P005126  [+4.7]
+│  │   └─ T001252073 2026-04-26 CASH_DEPOSIT           $  8,880.21 BRANCH    by P005126  [+5.4]
+│  │   └─ T001252072 2026-04-29 CASH_DEPOSIT           $  8,975.64 BRANCH    by P005126  [+5.4]
+│  │   └─ ... 1 more transactions
+│  ├─ RULE R-DEP-06 Funnel / many-to-one  +33.8
+│  │   8 inbound credits from 6 sources ($49,226), 94% moved out in 2026-04
+│  │   (rule: >= 6 inbound credits from >= 4 distinct sources in a month totalling >= $8,000, with >= 70% moved out)
+│  │   └─ T001252066 2026-04-01 CASH_DEPOSIT           $  8,099.77 BRANCH    by P005126  [+2.9]
+│  │   └─ T001252068 2026-04-07 WIRE_OUT               $ 13,685.70 WIRE     -> Heather Rojas DDS (US)  by P005126  [+4.8]
+│  │   └─ T001252071 2026-04-18 WIRE_OUT               $ 14,800.71 WIRE     -> Jerome Reid (US)  by P005126  [+5.2]
+│  │   └─ T001252073 2026-04-26 CASH_DEPOSIT           $  8,880.21 BRANCH    by P005126  [+3.1]
+│  │   └─ T001252072 2026-04-29 CASH_DEPOSIT           $  8,975.64 BRANCH    by P005126  [+3.2]
+│  │   └─ T001252074 2026-04-30 WIRE_OUT               $ 15,851.46 WIRE     -> Bonnie Barnes (US)  by P005126  [+5.6]
+│  │   └─ ... 11 more transactions
+├─ CREDIT_CARD ACC0003814 (no hits)
+
+ALERT A-00060 | 2026-05 | Party P002558 Julia Ortiz | Score 103 / threshold 35
+  MASS_AFFLUENT, Software Engineer, KYC LOW, income $142,100, expected cash $240/mo, customer since 2005-03-18
+├─ CREDIT_CARD ACC0005491  +76.8  (74% of alert)
+│  ├─ ML M-ANOM-CRD Card behaviour anomaly  +24.3
+│  │   Anomaly score 0.748 - top 0.05% of card account-months in 2026-05
+│  │   Reasons: Gambling / crypto share of spend: 79% (typical 0%) | Purchases vs credit limit: 0.9x (typical 0.2x) | Gambling / crypto spend: $17,868 (typical $0)
+│  │   └─ T001251665 2026-05-01 PURCHASE               $  1,235.50 ONLINE   -> Burton-Young Gambling (US)  [+1.4]
+│  │   └─ T001251661 2026-05-03 PURCHASE               $  1,774.30 ONLINE   -> Williams Inc Crypto / Quasi-cash (US)  [+2.0]
+│  │   └─ T001251664 2026-05-03 PURCHASE               $  2,029.00 ONLINE   -> Flores, Miller and Harrell Crypto / Quasi-cash (US)  [+2.3]
+│  │   └─ T001251670 2026-05-07 PURCHASE               $  1,254.00 ONLINE   -> Fisher and Sons Crypto / Quasi-cash (US)  [+1.4]
+│  │   └─ T001251658 2026-05-22 PURCHASE               $  1,418.42 ONLINE   -> Harris Inc Crypto / Quasi-cash (US)  [+1.6]
+│  │   └─ T001251659 2026-05-22 PURCHASE               $  3,986.39 ONLINE   -> Campbell Inc Crypto / Quasi-cash (US)  [+4.5]
+│  │   └─ ... 34 more transactions
+│  ├─ RULE R-CRD-04 High-risk MCC spend  +22.5
+│  │   $17,868 gambling/crypto spend in 2026-05 (79% of card spend)
+│  │   (rule: Gambling / crypto (MCC 7995, 6051) spend >= $3,000 and >= 30% of card spend in a month)
+│  │   └─ T001251665 2026-05-01 PURCHASE               $  1,235.50 ONLINE   -> Burton-Young Gambling (US)  [+1.6]
+│  │   └─ T001251661 2026-05-03 PURCHASE               $  1,774.30 ONLINE   -> Williams Inc Crypto / Quasi-cash (US)  [+2.2]
+│  │   └─ T001251664 2026-05-03 PURCHASE               $  2,029.00 ONLINE   -> Flores, Miller and Harrell Crypto / Quasi-cash (US)  [+2.6]
+│  │   └─ T001251670 2026-05-07 PURCHASE               $  1,254.00 ONLINE   -> Fisher and Sons Crypto / Quasi-cash (US)  [+1.6]
+│  │   └─ T001251658 2026-05-22 PURCHASE               $  1,418.42 ONLINE   -> Harris Inc Crypto / Quasi-cash (US)  [+1.8]
+│  │   └─ T001251659 2026-05-22 PURCHASE               $  3,986.39 ONLINE   -> Campbell Inc Crypto / Quasi-cash (US)  [+5.0]
+│  │   └─ ... 9 more transactions
+│  ├─ RULE R-XP-01 Cash-funded credit paydown (cross-product)  +30.0
+│  │   $18,024 cash in over 6 days across 2 account(s); $19,827 paid down on credit (CARD/DEPOSIT)
+│  │   (rule: Party cash-in >= $10,000 (and >= 2x expected cash) within 21 days, with >= 50% used to pay down cards/loans)
+│  │   └─ T000632076 2026-05-19 CASH_DEPOSIT           $    156.23 BRANCH    [+0.2]
+│  │   └─ T000632188 2026-05-21 PAYMENT                $  1,958.93 ACH      -> Julia Ortiz (ext bank) (US)  [+2.9]
+│  │   └─ T001251672 2026-05-24 PAYMENT                $ 13,814.89 BRANCH    [+20.7]
+│  │   └─ T001251671 2026-05-24 PAYMENT                $  4,053.00 BRANCH    [+6.1]
+├─ MORTGAGE ACC0005492  +11.3  (11% of alert)
+│  ├─ ML M-ANOM-LN Loan repayment anomaly  +11.3
+│  │   Anomaly score 0.676 - top 0.91% of loan account-months in 2026-05
+│  │   Reasons: Months since origination: 252 (typical 33)
+│  │   └─ T000632538 2026-05-04 PAYMENT                $  3,049.17 INTERNAL  [+11.3]
+├─ CHECKING ACC0010725 (no hits)
+├─ Cross-product bonus +15 (CARD,DEPOSIT,LOAN)
+

@@ -1,0 +1,16 @@
+rule_id,rule_name,product_scope,typology,logic,base_points,version
+R-DEP-01,Structuring,DEPOSIT,STRUCT,">=3 cash deposits of $8,000-$9,999 into one account within 7 days",30,1.0
+R-DEP-02,Rapid movement of funds,DEPOSIT,RAPID_MOVE,"External credits >= $20,000 within 3 days, and >= 80% debited out within the following 3 days",25,1.0
+R-DEP-03,High-risk geography wire,DEPOSIT,HR_WIRE,"Any wire >= $5,000 with a high-risk country, or >= 3 high-risk-country wires in a month",20,1.0
+R-DEP-04,Dormant account reactivation,DEPOSIT,DORMANT,"No customer activity for >= 180 days, then >= $10,000 of credits within 30 days of reactivation",15,1.0
+R-DEP-05,Cash inconsistent with profile,DEPOSIT,CASH_PROFILE,"Monthly cash deposits >= $10,000 and >= 3x the party's expected monthly cash",20,1.0
+R-DEP-06,Funnel / many-to-one,DEPOSIT,FUNNEL,">= 6 inbound credits from >= 4 distinct sources in a month totalling >= $8,000, with >= 70% moved out",30,1.0
+R-CRD-01,Cash-advance cycling,CARD,CC_CASH_ADV,">= 3 cash advances totalling >= $2,500 in a month, repaid (>= 80%) in the same month",20,1.0
+R-CRD-02,Overpayment and credit-balance refund,CARD,CC_OVERPAY_REFUND,"Credit-balance refund >= $1,500 issued after card overpayment",22,1.0
+R-CRD-03,Third-party card payments,CARD,CC_3P_PAY,"Card payments from >= 2 distinct third parties totalling >= $2,000 in a month",15,1.0
+R-CRD-04,High-risk MCC spend,CARD,CC_HRMCC,"Gambling / crypto (MCC 7995, 6051) spend >= $3,000 and >= 30% of card spend in a month",15,1.0
+R-CRD-05,Bust-out pattern,CARD,CC_BUSTOUT,"Returned card payment, or 14-day spend >= 85% of limit and >= 3x usual monthly spend",20,1.0
+R-LN-01,Early loan payoff / lump sum,LOAN,LN_EARLY_PAYOFF,"Payoff or extra payment >= $10,000 (or >= 25% of loan amount) within 24 months of origination",18,1.0
+R-LN-02,Loan proceeds moved out rapidly,LOAN,LN_RAPID_OUT,Loan disbursed to own account and >= 70% debited out within 7 days,25,1.0
+R-LN-03,Third-party / cash loan repayments,LOAN,LN_3P_REPAY,>= 2 loan payments in a month from third parties or in cash,12,1.0
+R-XP-01,Cash-funded credit paydown (cross-product),CROSS_PRODUCT,XP_CASH_TO_CREDIT,"Party cash-in >= $10,000 (and >= 2x expected cash) within 21 days, with >= 50% used to pay down cards/loans",25,1.0
