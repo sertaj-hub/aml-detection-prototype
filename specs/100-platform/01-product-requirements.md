@@ -107,7 +107,7 @@ Requirement keywords: **must** = mandatory for version 1; **should** = desirable
 - **PR-19** Each run must record the data snapshot identifier, rule versions, reference-data versions, start/end time, status and counts.
 - **PR-20** A failure in one rule must be isolated: it is recorded and reported, and other rules continue.
 - **PR-21** A rule in SHADOW state must be evaluated and its detections stored, but must not create alerts.
-- **PR-22** The engine must be able to re-run a past business date (reprocessing) without creating duplicate detections or alerts.
+- **PR-22** The engine must support a controlled **reprocessing** operation for a range of business dates (see D-9): it recomputes detections and alerts for those dates and later ones, withdraws alerts that no longer stand, and creates replacements, without leaving duplicate detections or alerts.
 
 ### 5.5 Detection, alerts and evidence
 - **PR-23** Every match must produce a detection record containing rule id, rule version, entity, window, evidence and run id.
@@ -121,6 +121,7 @@ Requirement keywords: **must** = mandatory for version 1; **should** = desirable
 - **PR-29** Alerts, evidence and the outbox record must be persisted in one database transaction.
 - **PR-30** The database is the system of record for alerts; Kafka only distributes events.
 - **PR-31** The outbox publisher must publish `financial-crime.alert.created.v1` at least once; every event must carry a unique `eventId` so consumers can deduplicate; publication failures must be retried and visible.
+- **PR-31a** An alert that is withdrawn (reprocessing, D-9) must be retained for audit with status `WITHDRAWN` (never physically deleted), and the engine must publish `financial-crime.alert.withdrawn.v1` so consumers can retract it; the catch-up API must expose the withdrawn status.
 - **PR-32** Events must not contain unnecessary sensitive data; consumers must be able to fetch full alert detail through an API.
 - **PR-33** Event contracts must be versioned and backward compatible within a major version.
 
@@ -227,6 +228,7 @@ before/after metrics.
 | D-6 | An alert is created per primary party per business date; the engine does **not** merge with or link to other open alerts. Consolidation of alerts into cases is the consumer's job and is out of scope | OQ-F10 | 02, 06 |
 | D-7 | Unconsumed (below-threshold) daily detections are included in the monthly cycle, then **expire** | OQ-F11 | 02 |
 | D-8 | The monthly run may be started on any day; it always evaluates the **previous completed calendar month** | OQ-F12 | 02 |
+| D-9 | **Late data**: transactions arriving 1–2 days late (`restatementDays` = 2) are accepted; an operator then runs a controlled **reprocess**, which withdraws the alerts that no longer stand and re-runs detection from the earliest affected date. No supplemental alerts are created. Later than 2 days: the transaction is stored and reported, **no reprocessing; the risk is accepted** | OQ-F2, OQ-F15 | 02 |
 
 ## 13. Open questions
 - [x] **OQ-1** Lakehouse: Databricks (D-2).

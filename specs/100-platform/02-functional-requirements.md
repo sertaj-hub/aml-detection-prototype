@@ -28,7 +28,7 @@ Out of scope here: rule JSON syntax (`04`), table DDL (`05`/`03`), event and API
 - **FR-3** Idempotency: a transaction is identified by `(sourceSystem, transactionId)`. Re-delivery of an identical record is ignored. A re-delivery with **different content** is a **correction**: stored as a new revision, flagged, and counted in the reconciliation; the original is retained.
 - **FR-4** Reconciliation per batch: `received = accepted + corrected + duplicate + quarantined`; the manifest row count must equal `received`. Any mismatch fails the batch.
 - **FR-5** Transactions are normalised to the canonical model (`03`): UTC timestamp plus original offset, amount as exact decimal in transaction currency plus converted amount in the reporting currency with the rate date, standard direction, channel, counterparty and country codes.
-- **FR-6** Late arrivals: a transaction whose `transactionTs` is older than the `businessDate` is accepted into history. Windows that include it are **restated** for up to `restatementDays` (default 3, configurable) back; older late data is stored and reported but does not trigger restatement.
+- **FR-6** Late arrivals (D-9): a transaction whose `transactionTs` or business date is earlier than the batch's `businessDate` is accepted into history and flagged `LATE` with its lateness in days. The intake report lists the business dates affected. Lateness ≤ `restatementDays` (default **2**) marks those dates as **reprocess candidates** and notifies operators; reprocessing is **operator-triggered**, never automatic (FR-26). Lateness > `restatementDays` is stored and reported but is **not reprocessed**: this is an accepted risk. The late transaction is still in history, so it takes part in the windows of later runs in the normal way.
 - **FR-7** Completeness gate: before detection, the run checks (a) every expected source delivered its batch, (b) quarantine rate ≤ configured limit (default 2%), (c) row count within tolerance of the trailing 7-day average. A failed gate stops the run (status `BLOCKED`) and notifies operators; an operator may override with a recorded reason.
 
 ### 3.2 Enrichment (PR-7…9)
@@ -54,7 +54,7 @@ Out of scope here: rule JSON syntax (`04`), table DDL (`05`/`03`), event and API
 - **FR-23** Rules are evaluated independently. A rule error (invalid data, query failure, timeout) is recorded with rule id, version, error and query id; other rules continue (PR-20). The run is PARTIAL and the failed rules are listed.
 - **FR-24** Each rule execution records: start/end, rows scanned, detections produced, alerts created, status. These feed metrics (PR-45).
 - **FR-25** Determinism: for the same manifest, detections are identical, including ordering of evidence lists (sorted by transaction timestamp then id) and rounding rules (see FR-31).
-- **FR-26** Re-running a business date (**reprocessing**) creates a new run attempt linked to the previous one. Identical results create no new detections or alerts (see FR-37). Differences (e.g. restated data, a rule activated retrospectively by an operator) produce new detections marked `origin = REPROCESS`; they create alerts only if the alert policy allows (default: yes, flagged).
+- **FR-26** **Reprocessing (D-9).** An authorised operator starts a reprocess for a range of business dates `[D1, Dn]` with a recorded reason. The engine (a) re-runs intake checks for those dates, (b) re-runs detection for `D1` and **every later business date up to the latest processed date, in order** (rolling windows and the novelty rule chain across days, so later dates must be recomputed), (c) compares the recomputed alerts with the existing ones, (d) **retains** an alert whose `alertKey`, detections and score are unchanged, **withdraws** every other existing alert in the range (status `WITHDRAWN`, reason, run id; never physically deleted), and **creates** replacement alerts with new alert ids and `origin = REPROCESS`, (e) publishes `AlertWithdrawn` and `AlertCreated` events through the outbox, and (f) re-runs any MONTHLY cycle for months overlapping the range that has already been processed. Detections are replaced the same way. The whole operation is audited and is atomic per business date. No supplemental alerts are ever created.
 - **FR-27** A run completes only after all rule executions finished and the outbox rows for its alerts are committed.
 
 ### 3.5 Evaluation semantics (PR-11, 18)
@@ -76,18 +76,18 @@ Out of scope here: rule JSON syntax (`04`), table DDL (`05`/`03`), event and API
 
 ### 3.7 Alert generation (PR-24, 25, 28)
 - **FR-41** **Alert policy (D-4).** Detections are events per rule. For each **cycle** the engine groups the cycle's *new, unconsumed* detections (FR-36, FR-37) by the **primary party** of the detection's account(s) and creates **one alert per primary party per cycle**, containing every grouped detection as a child with its evidence.
-  - Cycle assignment: a detection's **cycle date is the business date of its latest trigger transaction** (not the run date). A transaction that arrives late (FR-6) therefore lands in the daily cycle of its own business date.
+  - Cycle assignment: a detection's **cycle date is the business date of the run that produced it**, which is the business date of the transaction batch being processed (D-5). A late transaction (FR-6) does not create an alert in a past cycle; it is handled only by reprocessing.
   - Cycles: the DAILY run forms the *daily cycle* for its business date from the DAILY-cadence detections whose cycle date is that date. The MONTHLY run forms the *monthly cycle* from MONTHLY-cadence detections of the month **plus any DAILY-cadence detections of that month that did not produce an alert** (below threshold), so sub-threshold behaviour accumulates.
   - **Score**: each detection earns *points* = rule-version base points × severity factor (from the threshold set), with the repeat discount, cross-product bonus and KYC bonus defined by the alert policy version (reference: baseline `003-scoring-and-alerts.md`). The party's cycle score is the sum.
   - **Threshold** (D-5): initial values are **50 for a daily cycle and 100 for the monthly cycle**. An alert is created only when the party's cycle score ≥ the threshold for that cycle type. Policy parameters (points, factors, bonuses, threshold) live in a versioned, governed **alert policy** (approval as for rules); the policy version is recorded in the run manifest and on the alert.
   - **Consumption**: a detection belongs to at most one alert. Detections that did not reach the threshold stay unconsumed and are carried to the monthly cycle (above); after the monthly cycle they **expire** (D-7) and never count again.
-  - **Late data**: when a restated or late transaction (FR-6) creates a new detection in a past daily cycle that already produced an alert, the party's unconsumed detections for that cycle are re-scored; if the score ≥ threshold, a **supplemental alert** is created for that party and cycle (sequence +1, `origin = REPROCESS`). Detections already consumed are not recounted.
+  - **Late data** (D-9): there are no supplemental alerts. Late data within `restatementDays` is handled by reprocessing (FR-26); later data is accepted risk.
   - **No merging** (D-6): the engine never merges into or links to alerts of other cycles or dates; one alert per primary party per business date. Case consolidation is the consumer's responsibility.
   - Secondary holders (joint, authorised user, co-borrower) are listed on the alert with roles and the initiating party; the alert is addressed to the primary party (FR-35).
   - SHADOW-rule detections never enter an alert (FR-45).
 - **FR-42** Severity comes from the rule version (and optionally the threshold set band, e.g. HIGH when ratio ≥ 2×). The alert records the rule's severity and the band that determined it.
 - **FR-43** `alertId` is generated by the engine as a unique, non-reusable identifier (e.g. `ALT-<cycle>-<sequence>`); it is **not** renumbered on reruns. Replay idempotency uses the deterministic key `alertKey = hash(primaryPartyId, cycleType, cycleId, alertPolicyVersion)` plus the `detectionId`s (FR-39): a rerun that yields the same detections for the same party-cycle returns the existing alert.
-- **FR-44** Alert fields are set per PR-25. `status` in the engine is `GENERATED` → `PUBLISHED`; investigation statuses belong to the consumer.
+- **FR-44** Alert fields are set per PR-25. `status` in the engine is `GENERATED` → `PUBLISHED`, and `WITHDRAWN` (FR-26); investigation statuses belong to the consumer. A withdrawn alert keeps its content and links for audit and is returned by the catch-up API with its status.
 - **FR-45** An alert for a SHADOW rule is **never** created; its detections are stored with `shadow = true` (PR-21).
 
 ### 3.8 Persistence and publication (PR-29…33)
@@ -117,7 +117,7 @@ Intake
 - **AC-1** (FR-1) Given a batch whose checksum does not match the manifest, When the engine starts intake, Then the batch is rejected unread and an operator alert is raised.
 - **AC-2** (FR-2/4) Given a 1,000-record batch with 5 invalid records, When ingested, Then 995 are accepted, 5 quarantined with reason codes, and `received = accepted + corrected + duplicate + quarantined`.
 - **AC-3** (FR-3) Given a record re-delivered identically, Then it is counted as duplicate and nothing changes. Given re-delivered with a different amount, Then a new revision is stored, flagged as correction, and the original is retained.
-- **AC-4** (FR-6) Given a transaction dated 2 days before the business date arrives today, When the next run executes, Then windows containing it are restated; given one dated 10 days earlier, Then it is stored and reported but triggers no restatement.
+- **AC-4** (FR-6) Given a transaction dated 2 days before the business date arrives today, Then it is stored flagged `LATE (2)`, the intake report lists the affected dates and notifies operators, and nothing is reprocessed automatically; given one dated 10 days earlier, Then it is stored, flagged `LATE (10)` and reported as outside the reprocess window, and cannot be reprocessed through the normal operation.
 - **AC-5** (FR-7) Given source B did not deliver, When the run starts, Then it is BLOCKED; an operator override with a reason lets it proceed and the override is audited.
 
 Enrichment
@@ -144,15 +144,16 @@ Detections and alerts
 - **AC-20** (FR-37/38) Given day D+2 matches T2, T3, T4, Then a new alert is created with `relatedAlerts` pointing to the first.
 - **AC-21** (FR-39) Given identical inputs, Then `detectionId` is identical; given one different trigger transaction, Then it differs.
 - **AC-22** (FR-40) Given evidence where the stated total differs from the sum of the linked transactions, Then no alert is created and the reconciliation failure is recorded.
-- **AC-23** (FR-26) Given a rerun of D with unchanged data, Then no new detections or alerts; given restated data adding T5, Then a new detection `origin = REPROCESS` is created and its alert is flagged.
+- **AC-23** (FR-26) Given a reprocess of [D−2, D] with unchanged data, Then every alert is retained (same ids), nothing is withdrawn and no events are published; given a late transaction that changes the result, Then affected alerts are `WITHDRAWN` with a reason, replacements are created with new ids and `origin = REPROCESS`, and one `AlertWithdrawn` plus one `AlertCreated` event is published for each.
 - **AC-24** (FR-45) Given a SHADOW rule matching, Then a detection with `shadow = true` exists, and no alert or outbox row.
 - **AC-35** (FR-41) Given a party P with accounts A1 and A2 and detections from three different rules in one daily cycle with score ≥ threshold, Then exactly one alert is created for P containing three child detections, and each detection is marked consumed by it.
 - **AC-36** (FR-41) Given joint account J with primary P and joint holder Q, and a detection on J, Then the alert is addressed to P and lists Q with role JOINT; no alert is created for Q.
 - **AC-37** (FR-41) Given a party whose daily scores are 40, 35 and 30 (each below the daily threshold 50) in one month, When the MONTHLY run executes, Then the three unconsumed daily detections are included, the combined score 105 ≥ 100, and a monthly alert is created; given 20, 18 and 22 (total 60), Then no alert is created.
 - **AC-38** (FR-41) Given a detection already consumed by a daily alert, Then it is not counted again in the monthly cycle.
 - **AC-40** (FR-41/D-5) Given a daily cycle score of 49.9, Then no alert; given 50.0, Then an alert. Given a monthly score of 99.9, Then no alert; given 100.0, Then an alert.
-- **AC-41** (FR-41) Given a transaction dated business date D−2 arrives today and creates a detection, Then the detection's cycle date is D−2, not today.
-- **AC-42** (FR-41) Given a party already alerted for D−2 and a late transaction creating a new detection in that cycle, When re-scored, Then a supplemental alert (sequence 2, origin REPROCESS) is created only if the unconsumed detections' score ≥ 50, and the already-consumed detections are not recounted.
+- **AC-41** (FR-41/D-5) Given a transaction batch for business date D processed by the run for D, Then every detection and alert it produces has cycle date D, and given a late transaction dated D−2 arriving in D, Then the run for D does not create an alert in the D−2 cycle.
+- **AC-42** (FR-26/D-9) Given a reprocess starting at D−2 with runs already done for D−2, D−1 and D, Then all three dates are recomputed in order, the novelty rule uses the recomputed earlier detections, and a month already run is re-run; given no operator action, Then no reprocessing occurs and no supplemental alert is ever created.
+- **AC-46** (PR-31a/FR-26) Given a withdrawn alert, Then the row remains with status `WITHDRAWN`, the audit shows who started the reprocess and why, and the catch-up API still returns it with that status.
 - **AC-43** (FR-20/D-8) Given the MONTHLY run is started on the 3rd and, separately, on the 25th of October, Then both evaluate September; given a daily run of September is unfinished, Then the monthly run is BLOCKED unless overridden with a reason.
 - **AC-44** (FR-41/D-7) Given unconsumed daily detections of September after the September monthly cycle, When the October cycle runs, Then they are not included.
 - **AC-45** (FR-41/D-6) Given party P has an alert for 2026-10-01 and new detections on 2026-10-02 meeting the threshold, Then a separate alert for 2026-10-02 is created with no link to the first.
@@ -205,7 +206,7 @@ conformance run (`01` AC-14) and recorded per rule.
 
 ## 9. Open questions
 - [ ] **OQ-F1** Novelty rule: should repeated behaviour with no new transactions ever re-alert (e.g. after N days or when severity would rise)? SME decision per typology.
-- [ ] **OQ-F2** Restatement window default (3 days) and whether restated alerts should be tagged for investigator attention.
+- [x] **OQ-F2** Resolved (D-9): `restatementDays` = 2; operator-triggered reprocess; later data is accepted risk.
 - [ ] **OQ-F3** Bank operating timezone and business-day calendar (holidays) for calendar windows.
 - [ ] **OQ-F4** Are corrections to transactions (FR-3) expected from source systems, and how common?
 - [ ] **OQ-F5** Completeness gate thresholds (quarantine ≤2%, row-count tolerance): confirm with data owners.
@@ -218,7 +219,8 @@ conformance run (`01` AC-14) and recorded per rule.
 - [x] **OQ-F12** Resolved (D-8): monthly run starts any day and evaluates the previous completed month.
 - [ ] **OQ-F13** **Points calibration.** Thresholds 50/100 only make sense with a defined points scale (§7). Which scale: the prototype's, or recalibrated by backtest to a target volume?
 - [ ] **OQ-F14** "Monthly security blanket rule": please define what this term means (my reading: a monthly blanket cycle that evaluates the whole previous month). Until confirmed I have modelled only the "previous completed month" behaviour.
-- [ ] **OQ-F15** Late-data supplemental alerts (FR-41): is a second alert for an already-alerted party/date acceptable to the consumer, or should late detections only be reported in the next cycle?
+- [x] **OQ-F15** Resolved (D-9): no supplemental alerts. Open consequence **OQ-F17**: alerts withdrawn by reprocessing may already be under investigation in the independent case system; the consumer contract (`07`) must say what a consumer must do on `AlertWithdrawn`. Is a short publication hold (e.g. publish after the reprocess window closes) acceptable to avoid retractions, at the cost of delayed alerts?
+- [ ] **OQ-F18** Reprocess keeps alerts that are unchanged (same alertKey, detections, score) and replaces only changed ones, to avoid needless churn in the consumer; the alternative is to withdraw everything in the range and re-create it. Confirm the "keep unchanged" behaviour.
 - [ ] **OQ-F16** Which transaction sets the cycle date when a monthly-cadence detection has triggers spanning the month (FR-41 uses the latest trigger; confirm for monthly rules it is simply the month).
 
 ## 10. Implementation notes
