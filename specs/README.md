@@ -34,7 +34,7 @@ later want to change. Disagreements with the as-is logic become new specs, not e
 
 | Spec | Title | Status |
 |---|---|---|
-| 000-baseline | As-is system (rules, ML, scoring, evaluation) | planned |
+| 000-baseline | As-is system (rules, ML, scoring, evaluation) + SME open questions | AS-IS (draft, awaiting SME review) |
 | 010-foundations | Package structure, tests, lint, CI, baseline lock | planned |
 | 020-stable-ids-event-store | Deterministic IDs, persistent event store | planned |
 | 030-incremental-cycles | Idempotent per-cycle processing | planned |
