@@ -44,6 +44,6 @@ later want to change. Disagreements with the as-is logic become new specs, not e
 | 070-data-controls | Schema contracts, completeness checks | planned |
 | 080-governance-pack | Model documentation, tuning evidence | planned |
 | 100-platform/01-product-requirements | Rule Engine platform: product requirements (batch Python detection + Spring Boot control plane) | APPROVED (assumptions D-1..D-4) |
-| 100-platform/02-functional-requirements | Rule Engine platform: exact functional behaviour (60 FR, 34 AC) | DRAFT |
+| 100-platform/02-functional-requirements | Rule Engine platform: exact functional behaviour (60 FR, 39 AC) | DRAFT |
 
 Keep this index up to date when a spec is added or changes status.

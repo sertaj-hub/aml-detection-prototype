@@ -40,11 +40,11 @@ evaluation harness define what "correct detection" means, and the platform must 
 ## 3. System context
 
 ```
- Transaction sources ──(daily feed)──► Lakehouse (Parquet/Delta: history)
+ Transaction sources ──(daily feed)──► Databricks lakehouse (Delta: history)
                                             │
                                             ▼
  Rule definitions (JSON) ◄── PostgreSQL ──► Python batch detection (DSL → SQL;
-   (versioned, governed)     (rules, runs,      DuckDB dev/test, Spark scale)
+   (versioned, governed)     (rules, runs,      Spark SQL on Databricks; DuckDB for tests)
                               detections,            │
                               alerts, evidence,      ▼
                               outbox, audit)    Alert generation
@@ -85,7 +85,7 @@ Requirement keywords: **must** = mandatory for version 1; **should** = desirable
 - **PR-3** Ingestion must be idempotent on `(sourceSystem, transactionId)`; re-delivery must not create duplicate transactions or duplicate detections.
 - **PR-4** Each load must produce reconciliation counts (received / accepted / rejected) that are stored with the run.
 - **PR-5** Transactions must be normalised to a canonical model (amounts, currency, timestamps in UTC with the original timezone retained, direction, channel, counterparty, country).
-- **PR-6** Transaction history needed by rules must live in the analytical store, not in the operational database.
+- **PR-6** Transaction history needed by rules (13 months at ~1M/day, D-3) must live in the Databricks analytical store, not in the operational database.
 
 ### 5.2 Enrichment and reference data
 - **PR-7** Transactions must be enriched with the party, account and reference attributes that rules reference (e.g. customer risk rating, expected activity, country risk lists).
@@ -102,7 +102,7 @@ Requirement keywords: **must** = mandatory for version 1; **should** = desirable
 - **PR-16** Rules must be tagged with the typology they detect and the products they apply to.
 
 ### 5.4 Evaluation
-- **PR-17** The engine must evaluate all ACTIVE rule versions for a business date in one run.
+- **PR-17** The engine must evaluate all ACTIVE rule versions in a **daily** run (per business date) and a **monthly** run (per calendar-month close); each rule declares its cadence (DAILY or MONTHLY).
 - **PR-18** Evaluation must be deterministic: the same rule versions, data snapshot and reference-data versions must produce identical detections.
 - **PR-19** Each run must record the data snapshot identifier, rule versions, reference-data versions, start/end time, status and counts.
 - **PR-20** A failure in one rule must be isolated: it is recorded and reported, and other rules continue.
@@ -111,7 +111,7 @@ Requirement keywords: **must** = mandatory for version 1; **should** = desirable
 
 ### 5.5 Detection, alerts and evidence
 - **PR-23** Every match must produce a detection record containing rule id, rule version, entity, window, evidence and run id.
-- **PR-24** Alert generation must follow an explicit, configurable policy that defines the alert key and how detections are grouped or deduplicated (e.g. one alert per rule + entity + business date; consolidation of several rules for one party per cycle). The default policy is defined in `06-alert-management`.
+- **PR-24** Detections are produced per rule; alerts are produced **per primary party of the account(s)** per cycle (daily or monthly) by an explicit, versioned alert policy that groups the party's new detections, scores them and applies a threshold (D-4). A detection is consumed by at most one alert. The policy details are defined in `06-alert-management`; the prototype's scoring is the reference.
 - **PR-25** An alert must contain at least: alertId, ruleId(s), ruleVersion(s), alertType, party id, account id(s), jurisdiction, businessUnit, severity, detectionTimestamp, createdTimestamp, runId, status.
 - **PR-26** Every alert must carry evidence sufficient for an investigator to understand why it fired: input transaction ids, calculated metrics, thresholds, matched conditions, window, rule version, and a plain-English explanation.
 - **PR-27** Evidence must reconcile: any amounts or counts shown must be derivable from the linked transactions.
@@ -186,7 +186,7 @@ Requirement keywords: **must** = mandatory for version 1; **should** = desirable
 4. No alert is lost between database and Kafka (AC-10, AC-11).
 5. A rule can be tested and backtested without any production effect (AC-12).
 6. An independent Case Management solution can be built against the published contracts alone (AC-13, AC-15, AC-16).
-7. Performance target (to be set in `09-non-functional-requirements`): a daily run over the agreed volume finishes within the agreed batch window.
+7. Performance target (set in `09-non-functional-requirements`): a daily run over ~1M new transactions with 13 months of history finishes within the agreed batch window; a monthly run likewise.
 
 ## 9. Data contracts
 
@@ -215,29 +215,28 @@ before/after metrics.
 | 7 Synthetic data only | Respected in non-production; production data handling in `09` |
 | 8 Simplicity | Batch-first; streaming deferred; monolith-first modules |
 
-## 12a. Decisions recorded on approval
-The user approved the draft without answering the four gating questions, so the recommended defaults are adopted
-as **assumptions**. Overriding any of them reopens the listed specs.
+## 12a. Decisions (confirmed by the user, 2026-10-02)
 
-| ID | Decision (assumed) | Resolves | Affects |
+| ID | Decision | Resolves | Affects |
 |---|---|---|---|
-| D-1 | Batch only in v1; daily T+1 run per business date. Intraday/streaming deferred | OQ-2 | 02, 05 |
-| D-2 | Lakehouse = Parquet files queried with DuckDB first; Spark/Databricks as the scale-out target using the same SQL | OQ-1 | 05, 09 |
-| D-3 | Volume planning assumption: ~5M transactions/day, ≥13 months of history (to be confirmed) | OQ-3 | 09 |
-| D-4 | Default alert policy: detections deduplicated per rule + entity with a novelty rule; party-level consolidation is an optional policy | OQ-4 | 02, 06 |
+| D-1 | Batch only in v1, two cadences: **daily** (per business date) and **monthly** (per calendar-month close). Intraday/streaming deferred | OQ-2 | 02, 05 |
+| D-2 | Lakehouse = **Databricks** (Delta tables, Spark SQL / PySpark). DuckDB is used only for local development and automated tests on the same SQL subset | OQ-1 | 05, 09 |
+| D-3 | Volume: **~1 million transactions/day, 13 months of history** (~400 million rows) | OQ-3 | 09 |
+| D-4 | **Detections are per rule (event per rule); alerts are per primary party of the account.** Detections for a party in a cycle are consolidated into one alert (daily cycle, monthly cycle). A detection belongs to at most one alert | OQ-4 | 02, 06 |
 
 ## 13. Open questions
-- [ ] **OQ-1** Where does the lakehouse run (Databricks, or Parquet + DuckDB first)? Needed for `05` and `09`.
-- [ ] **OQ-2** Batch cadence: daily T+1 only, or intraday micro-batches too? Latency expectation for alerts?
-- [ ] **OQ-3** Expected volumes: transactions/day, accounts, retention period of history?
-- [ ] **OQ-4** Default alert policy: per rule+entity+date, or party-level risk-score accumulation like the prototype?
+- [x] **OQ-1** Lakehouse: Databricks (D-2).
+- [x] **OQ-2** Cadence: daily and monthly (D-1).
+- [x] **OQ-3** Volumes: ~1M/day, 13 months (D-3).
+- [x] **OQ-4** Alert policy: event per rule, alert per primary party (D-4).
 - [ ] **OQ-5** Does a threshold change require full re-approval, or a lighter governed path?
 - [ ] **OQ-6** Which jurisdictions / business units, and is the engine multi-tenant?
 - [ ] **OQ-7** Who owns reference data (country risk lists, customer risk rating) and how fresh must it be?
 - [ ] **OQ-8** Who owns the integration contract (the engine team, a shared architecture group)? Which alert fields must the Case Management team have, and who signs off contract changes?
 - [ ] **OQ-11** Which schema format and registry will Kafka contracts use (JSON Schema vs Avro)? Is there an enterprise standard?
 - [ ] **OQ-12** Is a single consumer expected, or several (e.g. reporting, regulatory feeds) that need the same events?
-- [ ] **OQ-9** Retention periods for transactions, detections, alerts and audit?
+- [ ] **OQ-9** Retention periods for detections, alerts and audit (transactions: 13 months online per D-3; archive beyond that?)
+- [ ] **OQ-13** Databricks specifics: workspace/Unity Catalog layout, job compute (serverless vs clusters), how Python jobs reach PostgreSQL, network and secrets standards.
 - [ ] **OQ-10** Should the prototype's ML anomaly models become a rule-visible `MODEL_SCORE` condition in a later version?
 
 ## 14. Implementation notes

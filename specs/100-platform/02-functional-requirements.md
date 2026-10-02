@@ -6,7 +6,7 @@
 | Author | Claude (with the user, AML SME) |
 | Approver | |
 | Created | 2026-10-02 |
-| Related | `01-product-requirements.md` (PR-n, decisions D-1..D-4), `specs/000-baseline/` |
+| Related | `01-product-requirements.md` (PR-n, confirmed decisions D-1..D-4), `specs/000-baseline/` |
 
 Defines **exact behaviour** of the engine. Later specs define the models and contracts these behaviours use:
 `03` domain model, `04` rule definition, `05` evaluation internals, `06` alert management, `07` events, `08` APIs.
@@ -23,7 +23,7 @@ Out of scope here: rule JSON syntax (`04`), table DDL (`05`/`03`), event and API
 ## 3. Functional requirements
 
 ### 3.1 Intake (PR-1…6)
-- **FR-1** A source delivers a **batch** for `(sourceSystem, businessDate)` as files in a landing area plus a manifest containing file names, row counts and checksums. The engine must not read a batch whose manifest is missing or whose checksums fail.
+- **FR-1** A source delivers a **batch** for `(sourceSystem, businessDate)` as files in a landing area (cloud storage mounted in Databricks) plus a manifest containing file names, row counts and checksums. The engine must not read a batch whose manifest is missing or whose checksums fail.
 - **FR-2** Each record is validated: required fields present, types valid, amount > 0, currency known, timestamp parseable, direction ∈ {CR, DR}, account and party resolvable. A failed record goes to quarantine with `reason_code` and the original payload; the batch continues.
 - **FR-3** Idempotency: a transaction is identified by `(sourceSystem, transactionId)`. Re-delivery of an identical record is ignored. A re-delivery with **different content** is a **correction**: stored as a new revision, flagged, and counted in the reconciliation; the original is retained.
 - **FR-4** Reconciliation per batch: `received = accepted + corrected + duplicate + quarantined`; the manifest row count must equal `received`. Any mismatch fails the batch.
@@ -48,8 +48,8 @@ Out of scope here: rule JSON syntax (`04`), table DDL (`05`/`03`), event and API
 - **FR-19** A threshold set belongs to a rule version. Changing thresholds produces a new threshold-set version with its own approval; whether the rule logic version also changes is decided in `04` (OQ-5).
 
 ### 3.4 Run orchestration (PR-17…22, 45, 46)
-- **FR-20** A **run** is created per `(businessDate, mode)` where mode ∈ {PRODUCTION, SHADOW-only, BACKTEST, TEST}. Only one PRODUCTION run per business date may be RUNNING; a second request is queued or refused.
-- **FR-21** At start, the engine writes a **run manifest**: rule versions and threshold sets, field-catalogue version, reference-data versions, data snapshot identifier (Parquet snapshot/commit id), code version, parameters. The manifest is immutable.
+- **FR-20** A **run** is created per `(cadence, period, mode)` where cadence ∈ {DAILY (period = business date), MONTHLY (period = calendar month, started after the month's last daily run succeeded)} and mode ∈ {PRODUCTION, BACKTEST, TEST}. Only one PRODUCTION run per cadence and period may be RUNNING; a second request is queued or refused. A DAILY run evaluates rules with cadence DAILY; a MONTHLY run evaluates rules with cadence MONTHLY and performs the monthly alert cycle (FR-41).
+- **FR-21** At start, the engine writes a **run manifest**: rule versions and threshold sets, field-catalogue version, reference-data versions, data snapshot identifier (Delta table versions of every input table), code version, parameters. The manifest is immutable.
 - **FR-22** Run states: PENDING → RUNNING → SUCCEEDED | PARTIAL | FAILED | BLOCKED | CANCELLED. PARTIAL means at least one rule failed and at least one succeeded.
 - **FR-23** Rules are evaluated independently. A rule error (invalid data, query failure, timeout) is recorded with rule id, version, error and query id; other rules continue (PR-20). The run is PARTIAL and the failed rules are listed.
 - **FR-24** Each rule execution records: start/end, rows scanned, detections produced, alerts created, status. These feed metrics (PR-45).
@@ -59,7 +59,7 @@ Out of scope here: rule JSON syntax (`04`), table DDL (`05`/`03`), event and API
 
 ### 3.5 Evaluation semantics (PR-11, 18)
 - **FR-28** **Evaluation date**: a run for business date D evaluates the data with `transactionTs` ≤ end of D in the **bank's operating timezone** (a configuration value, default UTC).
-- **FR-29** **Rolling windows** of N hours/days are evaluated at the end of D over `(end(D) − N, end(D)]` (start exclusive, end inclusive). **Calendar windows** (e.g. month) are evaluated for the window containing D and only on the **last business day** of the window and on window close; they never fire twice for the same window and entity.
+- **FR-29** **Rolling windows** of N hours/days (DAILY cadence) are evaluated at the end of D over `(end(D) − N, end(D)]` (start exclusive, end inclusive); the maximum rolling window is bounded by the 13-month history (D-3). **Calendar-month windows** (MONTHLY cadence) are evaluated once, by the MONTHLY run, over `[first instant of month, last instant of month]`; they never fire twice for the same month and entity.
 - **FR-30** **Aggregation functions** v1: COUNT, COUNT DISTINCT, SUM, MIN, MAX, AVG, and the ratio of two aggregates over (possibly different) filters/windows. Grouping entity: PARTY, ACCOUNT, or a defined group. A group-by key with NULL is excluded and counted in run metrics.
 - **FR-31** Money arithmetic uses exact decimals; comparisons are on the reporting-currency amount rounded to 2 decimals half-up. Ratios are compared at full precision and displayed to 1 decimal.
 - **FR-32** Operators v1: `=, !=, <, <=, >, >=, IN, NOT IN, BETWEEN, IS NULL, IS NOT NULL, CONTAINS (set membership)`; boolean `AND/OR/NOT` with explicit grouping. Null in a comparison evaluates to false (never to true).
@@ -75,9 +75,15 @@ Out of scope here: rule JSON syntax (`04`), table DDL (`05`/`03`), event and API
 - **FR-40** **Evidence** has structured content (inputs, metrics with values and thresholds, window, rule version, matched conditions, trigger/context transactions with their contribution) and a generated plain-English explanation. Every number in the explanation must be derivable from the linked transactions (PR-27); the engine verifies this before persisting, and refuses to create the alert if it does not reconcile (the failure is recorded).
 
 ### 3.7 Alert generation (PR-24, 25, 28)
-- **FR-41** Default policy (D-4): each **new** detection (FR-37) creates one alert; alerts are not merged across rules. An optional policy `PARTY_CYCLE_CONSOLIDATION` groups new detections for the same party in the same cycle into one alert, with per-rule detections as children and a score (details in `06`).
+- **FR-41** **Alert policy (D-4).** Detections are events per rule. For each **cycle** the engine groups the cycle's *new, unconsumed* detections (FR-36, FR-37) by the **primary party** of the detection's account(s) and creates **one alert per primary party per cycle**, containing every grouped detection as a child with its evidence.
+  - Cycles: the DAILY run forms the *daily cycle* from DAILY-cadence detections of that business date. The MONTHLY run forms the *monthly cycle* from MONTHLY-cadence detections of the month **plus any DAILY-cadence detections of that month that did not produce an alert** (below threshold), so sub-threshold behaviour accumulates.
+  - **Score**: each detection earns *points* = rule-version base points × severity factor (from the threshold set), with the repeat discount, cross-product bonus and KYC bonus defined by the alert policy version (reference: baseline `003-scoring-and-alerts.md`). The party's cycle score is the sum.
+  - **Threshold**: an alert is created only when the party's cycle score ≥ the policy threshold. Policy parameters (points, factors, bonuses, threshold) live in a versioned, governed **alert policy** (approval as for rules); the policy version is recorded in the run manifest and on the alert.
+  - **Consumption**: a detection belongs to at most one alert. Detections that did not reach the threshold stay unconsumed and are carried to the monthly cycle (above), after which they expire.
+  - Secondary holders (joint, authorised user, co-borrower) are listed on the alert with roles and the initiating party; the alert is addressed to the primary party (FR-35).
+  - SHADOW-rule detections never enter an alert (FR-45).
 - **FR-42** Severity comes from the rule version (and optionally the threshold set band, e.g. HIGH when ratio ≥ 2×). The alert records the rule's severity and the band that determined it.
-- **FR-43** `alertId` is generated by the engine as a unique, non-reusable identifier derived from the run (e.g. `ALT-<yyyymmdd>-<sequence>`); it is **not** renumbered on reruns. The deterministic `detectionId` (FR-39) provides replay idempotency.
+- **FR-43** `alertId` is generated by the engine as a unique, non-reusable identifier (e.g. `ALT-<cycle>-<sequence>`); it is **not** renumbered on reruns. Replay idempotency uses the deterministic key `alertKey = hash(primaryPartyId, cycleType, cycleId, alertPolicyVersion)` plus the `detectionId`s (FR-39): a rerun that yields the same detections for the same party-cycle returns the existing alert.
 - **FR-44** Alert fields are set per PR-25. `status` in the engine is `GENERATED` → `PUBLISHED`; investigation statuses belong to the consumer.
 - **FR-45** An alert for a SHADOW rule is **never** created; its detections are stored with `shadow = true` (PR-21).
 
@@ -90,7 +96,7 @@ Out of scope here: rule JSON syntax (`04`), table DDL (`05`/`03`), event and API
 - **FR-51** Events carry identifiers and classification only (no names, no full transaction list); consumers fetch detail through the API (PR-32).
 
 ### 3.9 Testing and backtesting (PR-34…37)
-- **FR-52** TEST runs a rule version over a chosen sample (date range, party sample, or fixture dataset). BACKTEST runs it over a historical period. Both write only to the `sandbox` schema; they never write alerts, outbox events or production detections, and the code path must be unable to (enforced by a separate database role without write access to production tables).
+- **FR-52** TEST runs a rule version over a chosen sample (date range, party sample, or fixture dataset). BACKTEST runs it over a historical period. On Databricks, both write only to a separate `sandbox` catalog/schema (and a sandbox PostgreSQL schema); they never write alerts, outbox events or production detections, and the code path must be unable to (enforced by a separate database role without write access to production tables).
 - **FR-53** TEST/BACKTEST results: transactions evaluated, entities evaluated, matches, would-be alerts (after the novelty rule and policy), runtime, sample evidence, distribution by month and segment.
 - **FR-54** **Version comparison**: for versions A and B over the same period report alerts only in A, only in B, in both, and the volume delta.
 - **FR-55** Backtesting honours the same effective-dated reference data, thresholds and restatement semantics as production.
@@ -137,6 +143,11 @@ Detections and alerts
 - **AC-22** (FR-40) Given evidence where the stated total differs from the sum of the linked transactions, Then no alert is created and the reconciliation failure is recorded.
 - **AC-23** (FR-26) Given a rerun of D with unchanged data, Then no new detections or alerts; given restated data adding T5, Then a new detection `origin = REPROCESS` is created and its alert is flagged.
 - **AC-24** (FR-45) Given a SHADOW rule matching, Then a detection with `shadow = true` exists, and no alert or outbox row.
+- **AC-35** (FR-41) Given a party P with accounts A1 and A2 and detections from three different rules in one daily cycle with score ≥ threshold, Then exactly one alert is created for P containing three child detections, and each detection is marked consumed by it.
+- **AC-36** (FR-41) Given joint account J with primary P and joint holder Q, and a detection on J, Then the alert is addressed to P and lists Q with role JOINT; no alert is created for Q.
+- **AC-37** (FR-41) Given a party whose daily scores are 20, 18 and 22 (threshold 35) on three days of the month, When the MONTHLY run executes, Then the three unconsumed daily detections are included and the monthly alert is created if the combined score ≥ threshold.
+- **AC-38** (FR-41) Given a detection already consumed by a daily alert, Then it is not counted again in the monthly cycle.
+- **AC-39** (FR-41/43) Given the daily run for D is repeated with identical detections, Then the existing alert (same `alertKey`) is returned and no second alert or outbox event is created.
 
 Persistence
 - **AC-25** (FR-46) Given a failure injected after the alert insert and before commit, Then no alert, evidence, link or outbox row exists.
@@ -179,7 +190,7 @@ conformance run (`01` AC-14) and recorded per rule.
 | 5 Honest evaluation | FR-55, 57 (out-of-time backtests, labelled metrics) |
 | 6 Regulator-readable | Numbered FR/AC with traceability to PR |
 | 7 Synthetic data only | Non-production only; production in `09` |
-| 8 Simplicity | Batch, novelty rule instead of full case-linking logic |
+| 8 Simplicity | Batch, daily + monthly cycles; novelty rule instead of full case-linking logic |
 
 ## 9. Open questions
 - [ ] **OQ-F1** Novelty rule: should repeated behaviour with no new transactions ever re-alert (e.g. after N days or when severity would rise)? SME decision per typology.
@@ -189,7 +200,11 @@ conformance run (`01` AC-14) and recorded per rule.
 - [ ] **OQ-F5** Completeness gate thresholds (quarantine ≤2%, row-count tolerance): confirm with data owners.
 - [ ] **OQ-F6** Reporting currency and FX rate source/rate date convention.
 - [ ] **OQ-F7** Should alert severity be able to rise on repeat behaviour (instead of suppression)?
-- [ ] **OQ-F8** Is `PARTY_CYCLE_CONSOLIDATION` required in v1 or only the default per-rule policy?
+- [x] **OQ-F8** Resolved by D-4: alerts are per primary party per cycle.
+- [ ] **OQ-F9** Daily-cycle alert threshold: same as the monthly threshold (prototype: 35), or different because a day is a smaller sample? Needs backtest evidence.
+- [ ] **OQ-F10** Should a daily alert for a party with an already-open alert from the same month be linked or merged (the engine does not know case state)? Default: separate alert linked via `relatedAlerts`.
+- [ ] **OQ-F11** Expiry of unconsumed sub-threshold detections after the monthly cycle: confirm they do not carry into later months.
+- [ ] **OQ-F12** Monthly run timing (e.g. business day +2) and treatment of late data after it (restatement, FR-6).
 
 ## 10. Implementation notes
 Not applicable until `IMPLEMENTED`.
