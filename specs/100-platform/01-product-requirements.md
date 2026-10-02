@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | DRAFT |
+| Status | APPROVED (2026-10-02) with assumptions D-1..D-4 below, open to override |
 | Author | Claude (with the user, AML SME) |
 | Approver | |
 | Created | 2026-10-02 |
@@ -214,6 +214,17 @@ before/after metrics.
 | 6 Regulator-readable | Respected: specs in Markdown with traceable requirement IDs |
 | 7 Synthetic data only | Respected in non-production; production data handling in `09` |
 | 8 Simplicity | Batch-first; streaming deferred; monolith-first modules |
+
+## 12a. Decisions recorded on approval
+The user approved the draft without answering the four gating questions, so the recommended defaults are adopted
+as **assumptions**. Overriding any of them reopens the listed specs.
+
+| ID | Decision (assumed) | Resolves | Affects |
+|---|---|---|---|
+| D-1 | Batch only in v1; daily T+1 run per business date. Intraday/streaming deferred | OQ-2 | 02, 05 |
+| D-2 | Lakehouse = Parquet files queried with DuckDB first; Spark/Databricks as the scale-out target using the same SQL | OQ-1 | 05, 09 |
+| D-3 | Volume planning assumption: ~5M transactions/day, ≥13 months of history (to be confirmed) | OQ-3 | 09 |
+| D-4 | Default alert policy: detections deduplicated per rule + entity with a novelty rule; party-level consolidation is an optional policy | OQ-4 | 02, 06 |
 
 ## 13. Open questions
 - [ ] **OQ-1** Where does the lakehouse run (Databricks, or Parquet + DuckDB first)? Needed for `05` and `09`.
