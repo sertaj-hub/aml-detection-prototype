@@ -45,5 +45,6 @@ later want to change. Disagreements with the as-is logic become new specs, not e
 | 080-governance-pack | Model documentation, tuning evidence | planned |
 | 100-platform/01-product-requirements | Rule Engine platform: product requirements (batch Python detection + Spring Boot control plane) | APPROVED (decisions D-1..D-9) |
 | 100-platform/02-functional-requirements | Rule Engine platform: exact functional behaviour (69 FR, 55 AC) | DRAFT |
+| 110-mvp | Rule Engine MVP: daily batch, rule JSON → SQL → DuckDB, 3 rules, party alerts, SQLite + outbox stub | DRAFT |
 
 Keep this index up to date when a spec is added or changes status.
