@@ -227,7 +227,7 @@ before/after metrics.
 | D-5 | Initial alert thresholds: **50 for the daily cycle, 100 for the monthly cycle** (policy parameters, versioned and governed). The **daily cycle is the business date of the transaction(s)**, not the run date | OQ-F9 | 02, 06 |
 | D-6 | An alert is created per primary party per business date; the engine does **not** merge with or link to other open alerts. Consolidation of alerts into cases is the consumer's job and is out of scope | OQ-F10 | 02, 06 |
 | D-7 | Unconsumed (below-threshold) daily detections are included in the monthly cycle, then **expire** | OQ-F11 | 02 |
-| D-8 | The monthly run may be started on any day; it always evaluates the **previous completed calendar month** | OQ-F12 | 02 |
+| D-8 | The monthly run may be started on any day; it always evaluates the **previous completed calendar month**. "Security Blanket" is the name of one MONTHLY-cadence rule with its own logic (specified in `04`); it is not an engine mechanism | OQ-F12, OQ-F14 | 02, 04 |
 | D-9 | **Late data**: transactions arriving 1–2 days late (`restatementDays` = 2) are accepted; an operator then runs a controlled **reprocess**, which withdraws the alerts that no longer stand and re-runs detection from the earliest affected date. No supplemental alerts are created. Later than 2 days: the transaction is stored and reported, **no reprocessing; the risk is accepted** | OQ-F2, OQ-F15 | 02 |
 
 ## 13. Open questions
