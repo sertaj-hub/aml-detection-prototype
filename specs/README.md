@@ -43,5 +43,6 @@ later want to change. Disagreements with the as-is logic become new specs, not e
 | 060-ml-operations | Out-of-time training, registry, drift, ranker | planned |
 | 070-data-controls | Schema contracts, completeness checks | planned |
 | 080-governance-pack | Model documentation, tuning evidence | planned |
+| 100-platform/01-product-requirements | Rule Engine platform: product requirements (batch Python detection + Spring Boot control plane) | DRAFT |
 
 Keep this index up to date when a spec is added or changes status.
