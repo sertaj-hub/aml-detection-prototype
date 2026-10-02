@@ -13,8 +13,9 @@
 Banks need transaction monitoring that compliance can configure, govern and explain, and that investigators can
 trust. This product is an **independent Financial Crime Transaction Monitoring Rule Engine**: it evaluates
 transaction data against configurable detection rules and produces alerts with evidence. Investigation is done by a
-separate Case Management application (to be built later with Spring Boot and React); the two systems meet only
-through stable contracts.
+separate, **independent Case Management solution** (own repository, deployment, database, release cycle, and
+possibly a different team or vendor). The two systems meet only through published, technology-neutral contracts;
+neither assumes anything about the other's implementation.
 
 The existing prototype in this repo is the **reference lab**: its behaviour (baseline specs), synthetic data and
 evaluation harness define what "correct detection" means, and the platform must reproduce it.
@@ -57,9 +58,10 @@ evaluation harness define what "correct detection" means, and the platform must 
                                            Rule effectiveness reporting
 ```
 
-Delivery phases: **P1** Python detection engine + PostgreSQL + outbox/Kafka; **P2** Spring Boot control plane
-(rule management API, approval workflow, alert API) + React rule UI; **P3** Case Management integration and
-disposition feedback.
+Delivery phases of **this product**: **P1** Python detection engine + PostgreSQL + outbox/Kafka; **P2** Spring Boot
+control plane (rule management API, approval workflow, alert API) + React rule UI; **P3** optional disposition
+feedback intake. Case Management is **not** a phase of this product; it is a separate solution that integrates
+through the contracts in §5.8.
 
 ## 4. Glossary
 
@@ -128,10 +130,13 @@ Requirement keywords: **must** = mandatory for version 1; **should** = desirable
 - **PR-36** The engine must be able to compare two rule versions over the same period (alert volume added/removed).
 - **PR-37** When labelled data exists (the synthetic reference lab), backtests should report precision and recall.
 
-### 5.8 Case Management integration
-- **PR-38** The engine must not depend on Case Management; integration is by event contract and API only.
-- **PR-39** After the alert is handed off, investigation state is owned by Case Management. The engine keeps detection state only.
-- **PR-40** The engine must accept an alert-disposition event from Case Management (e.g. closed false positive, escalated, SAR filed) and use it only for rule-effectiveness reporting, never to change detection results.
+### 5.8 Integration with independent consumers (Case Management)
+- **PR-38** The engine must not depend on any consumer. It must run, alert and publish with zero, one or many consumers, and must not share a database, libraries, deployment or release schedule with Case Management.
+- **PR-38a** Integration must use only published, technology-neutral contracts: a versioned Kafka event schema (JSON Schema or Avro in a schema registry) and a versioned REST API described by OpenAPI. No consumer-specific fields or logic may appear in the engine.
+- **PR-38b** The alert read API must allow a consumer to fetch full alert detail, evidence and linked transactions by `alertId`, and to list/replay alerts from a given point (so a consumer that was down or is newly built can catch up).
+- **PR-38c** Contracts must be published with example payloads and a consumer-contract test suite that either side can run in its own pipeline.
+- **PR-39** After the alert is handed off, investigation state is owned by the consuming system. The engine keeps detection state only and must not model cases, assignments or decisions.
+- **PR-40** The engine may accept an optional alert-disposition event (e.g. closed false positive, escalated, SAR filed) from any consumer that chooses to send one, using a published contract, and use it only for rule-effectiveness reporting, never to change detection results. The engine must work fully without it.
 
 ### 5.9 Audit and security
 - **PR-41** The engine must audit rule lifecycle actions, runs, alert creation, publication, publication failure and replay, recording who/what/when and the before/after for changes.
@@ -157,16 +162,18 @@ Requirement keywords: **must** = mandatory for version 1; **should** = desirable
 - **AC-10** (PR-29) Given a failure after the alert insert and before commit, When the transaction aborts, Then no alert, evidence or outbox row exists.
 - **AC-11** (PR-31) Given Kafka is unavailable, When alerts are created, Then outbox events stay pending, are published after recovery, and carry unique eventIds.
 - **AC-12** (PR-34/35) Given a test or backtest, When it completes, Then no production alert or outbox event is created.
-- **AC-13** (PR-38) Given Case Management is down, When the engine runs, Then runs, alerts and publication complete normally.
+- **AC-13** (PR-38) Given no consumer is running, When the engine runs, Then runs, alerts and publication complete normally, and a consumer started later can retrieve every alert through the API and/or replay from Kafka.
+- **AC-15** (PR-38a/c) Given the published contract and example payloads, When an independent consumer (a test stub written without access to the engine's code) validates them, Then all events and API responses conform.
+- **AC-16** (PR-38b) Given a consumer that was offline for three runs, When it requests alerts since its last position, Then it receives each alert once, in order, with evidence.
 - **AC-14** (reference lab) Given the synthetic dataset and the 15 reference rules expressed in the rule definition language, When the engine runs the six months, Then results meet the conformance criteria set in `05-rule-evaluation` (alert volume, productive rate and recall within agreed tolerance of `CLAUDE.md` §6, with differences explained).
 
 ## 7. Priorities
 
 | Priority | Requirements |
 |---|---|
-| Must (P1) | PR-1–10, 12, 17–20, 22–23, 25–27, 29–31, 34–35, 38, 41–42, 45–46 |
+| Must (P1) | PR-1–10, 12, 17–20, 22–23, 25–27, 29–31, 34–35, 38, 38a, 38c, 39, 41–42, 45–46 |
 | Must (P2) | PR-13–16, 24, 36, 43 |
-| Must (P3) | PR-39–40 |
+| Must (P3) | PR-38b, 40 (optional feedback intake) |
 | Should | PR-21, 28, 32–33, 37, 44 |
 
 (Priorities are a first proposal for review.)
@@ -178,7 +185,7 @@ Requirement keywords: **must** = mandatory for version 1; **should** = desirable
 3. Re-running a business date changes nothing (AC-6).
 4. No alert is lost between database and Kafka (AC-10, AC-11).
 5. A rule can be tested and backtested without any production effect (AC-12).
-6. Case Management can be built against the events and API alone (AC-13).
+6. An independent Case Management solution can be built against the published contracts alone (AC-13, AC-15, AC-16).
 7. Performance target (to be set in `09-non-functional-requirements`): a daily run over the agreed volume finishes within the agreed batch window.
 
 ## 9. Data contracts
@@ -216,7 +223,9 @@ before/after metrics.
 - [ ] **OQ-5** Does a threshold change require full re-approval, or a lighter governed path?
 - [ ] **OQ-6** Which jurisdictions / business units, and is the engine multi-tenant?
 - [ ] **OQ-7** Who owns reference data (country risk lists, customer risk rating) and how fresh must it be?
-- [ ] **OQ-8** Which alert fields are mandatory for the Case Management team (confirm early, they are the consumers)?
+- [ ] **OQ-8** Who owns the integration contract (the engine team, a shared architecture group)? Which alert fields must the Case Management team have, and who signs off contract changes?
+- [ ] **OQ-11** Which schema format and registry will Kafka contracts use (JSON Schema vs Avro)? Is there an enterprise standard?
+- [ ] **OQ-12** Is a single consumer expected, or several (e.g. reporting, regulatory feeds) that need the same events?
 - [ ] **OQ-9** Retention periods for transactions, detections, alerts and audit?
 - [ ] **OQ-10** Should the prototype's ML anomaly models become a rule-visible `MODEL_SCORE` condition in a later version?
 
