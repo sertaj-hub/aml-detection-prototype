@@ -1,0 +1,43 @@
+{
+  "ruleId": "TM-US-003",
+  "version": "1.0",
+  "name": "Rapid Movement of Funds",
+  "status": "ACTIVE",
+  "cadence": "DAILY",
+  "evaluate": "EVENT_TIME",
+  "typology": "RAPID_MOVEMENT",
+  "severity": "MEDIUM",
+  "regulation": {
+    "framework": "BSA",
+    "references": ["31 U.S.C. 5318(g) (suspicious activity reporting)"],
+    "note": "Pass-through / layering indicator. Mapping to be validated by Compliance."
+  },
+  "parameters": {"minCredits": 3, "creditFloor": 10000, "outflowRatio": 0.8, "windowHours": 48},
+  "entity": {"groupBy": "ACCOUNT"},
+  "filters": {
+    "externalCredit": [
+      {"field": "transaction.direction", "operator": "EQUALS", "value": "CR"},
+      {"field": "transaction.product_type", "operator": "EQUALS", "value": "DEPOSIT"},
+      {"field": "transaction.channel", "operator": "NOT_IN", "value": ["INTERNAL", "SYSTEM"]}
+    ],
+    "unrelatedOutflow": [
+      {"field": "transaction.direction", "operator": "EQUALS", "value": "DR"},
+      {"field": "transaction.product_type", "operator": "EQUALS", "value": "DEPOSIT"},
+      {"field": "transaction.type", "operator": "IN", "value": ["WIRE_OUT", "P2P_OUT", "CHECK_PAID", "ATM_WITHDRAWAL"]},
+      {"field": "transaction.counterparty_relation", "operator": "EQUALS", "value": "EXTERNAL"}
+    ]
+  },
+  "anchor": {"filter": "unrelatedOutflow"},
+  "aggregations": {
+    "creditCount": {"function": "COUNT", "filter": "externalCredit", "window": {"size": {"param": "windowHours"}, "unit": "HOURS"}},
+    "creditSum": {"function": "SUM", "field": "transaction.amount", "filter": "externalCredit", "window": {"size": {"param": "windowHours"}, "unit": "HOURS"}},
+    "outSum": {"function": "SUM", "field": "transaction.amount", "filter": "unrelatedOutflow", "window": {"size": {"param": "windowHours"}, "unit": "HOURS"}}
+  },
+  "match": {"all": [
+    {"left": {"agg": "creditCount"}, "operator": "GREATER_THAN_OR_EQUAL", "right": {"param": "minCredits"}},
+    {"left": {"agg": "creditSum"}, "operator": "GREATER_THAN_OR_EQUAL", "right": {"param": "creditFloor"}},
+    {"left": {"agg": "outSum"}, "operator": "GREATER_THAN_OR_EQUAL", "right": {"mul": [{"param": "outflowRatio"}, {"agg": "creditSum"}]}}
+  ]},
+  "severityRatio": {"div": [{"div": [{"agg": "outSum"}, {"agg": "creditSum"}]}, {"param": "outflowRatio"}]},
+  "explanation": "{creditCount} external credits totalling {creditSum:money} followed by {outSum:money} sent to unrelated parties within {windowHours} hours"
+}

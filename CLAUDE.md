@@ -60,7 +60,18 @@ python3 run_pipeline.py --no-data  # rerun detection on existing data/ (~2 min)
 python3 show_alert.py --top 3      # inspect alerts
 ```
 
-Tests and lint are introduced by spec `010-foundations`; update this section when they land.
+Rule Engine MVP (spec `110-mvp`, package `ruleengine/`):
+
+```bash
+python3 -m pytest -q                                   # 53 tests, names follow the acceptance criteria (MAC-n)
+python3 -m ruleengine validate ruleengine/rules/*.json  # validate rule files
+python3 -m ruleengine run --date 2026-06-15 --dry-run   # compute, print, write nothing
+python3 -m ruleengine run --from 2026-04-01 --to 2026-09-30   # persists to out/engine.db
+python3 -m ruleengine publish                           # outbox stub -> out/alerts.jsonl
+PYTHONPATH=. python3 scripts/mvp_conformance.py         # compare with the prototype and labels (~90 s)
+```
+
+Prototype tests and lint are still introduced by spec `010-foundations`.
 
 ## 5. Invariants — never break these
 

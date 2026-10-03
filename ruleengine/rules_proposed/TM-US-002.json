@@ -1,0 +1,214 @@
+{
+ "ruleId": "TM-US-002",
+ "version": "1.1",
+ "name": "Unusual High-Value Activity",
+ "status": "ACTIVE",
+ "cadence": "DAILY",
+ "evaluate": "EVENT_TIME",
+ "typology": "UNUSUAL_ACTIVITY",
+ "severity": "MEDIUM",
+ "regulation": {
+  "framework": "BSA",
+  "references": [
+   "31 U.S.C. 5318(g) (suspicious activity reporting)"
+  ],
+  "note": "Activity significantly above the customer's expected profile. Mapping to be validated by Compliance."
+ },
+ "parameters": {
+  "singleMultiple": 1.5,
+  "aggregateMultiple": 3.0,
+  "absoluteFloor": 10000,
+  "profileFloor": 500,
+  "windowDays": 30
+ },
+ "entity": {
+  "groupBy": "PARTY"
+ },
+ "filters": {
+  "externalCredit": [
+   {
+    "field": "transaction.direction",
+    "operator": "EQUALS",
+    "value": "CR"
+   },
+   {
+    "field": "transaction.product_type",
+    "operator": "EQUALS",
+    "value": "DEPOSIT"
+   },
+   {
+    "field": "transaction.channel",
+    "operator": "NOT_IN",
+    "value": [
+     "INTERNAL",
+     "SYSTEM"
+    ]
+   }
+  ]
+ },
+ "anchor": {
+  "filter": "externalCredit"
+ },
+ "aggregations": {
+  "credits": {
+   "function": "SUM",
+   "field": "transaction.amount",
+   "filter": "externalCredit",
+   "window": {
+    "size": {
+     "param": "windowDays"
+    },
+    "unit": "DAYS"
+   }
+  },
+  "creditCount": {
+   "function": "COUNT",
+   "filter": "externalCredit",
+   "window": {
+    "size": {
+     "param": "windowDays"
+    },
+    "unit": "DAYS"
+   }
+  }
+ },
+ "match": {
+  "any": [
+   {
+    "all": [
+     {
+      "left": {
+       "field": "transaction.amount"
+      },
+      "operator": "GREATER_THAN_OR_EQUAL",
+      "right": {
+       "mul": [
+        {
+         "param": "singleMultiple"
+        },
+        {
+         "profile": "party.expected_monthly_credits",
+         "floor": {
+          "param": "profileFloor"
+         }
+        }
+       ]
+      }
+     },
+     {
+      "left": {
+       "field": "transaction.amount"
+      },
+      "operator": "GREATER_THAN_OR_EQUAL",
+      "right": {
+       "param": "absoluteFloor"
+      }
+     }
+    ]
+   },
+   {
+    "all": [
+     {
+      "left": {
+       "agg": "credits"
+      },
+      "operator": "GREATER_THAN_OR_EQUAL",
+      "right": {
+       "mul": [
+        {
+         "param": "aggregateMultiple"
+        },
+        {
+         "profile": "party.expected_monthly_credits",
+         "floor": {
+          "param": "profileFloor"
+         }
+        }
+       ]
+      }
+     },
+     {
+      "left": {
+       "agg": "credits"
+      },
+      "operator": "GREATER_THAN_OR_EQUAL",
+      "right": {
+       "param": "absoluteFloor"
+      }
+     },
+     {
+      "left": {
+       "sub": [
+        {
+         "agg": "credits"
+        },
+        {
+         "field": "transaction.amount"
+        }
+       ]
+      },
+      "operator": "LESS_THAN",
+      "right": {
+       "mul": [
+        {
+         "param": "aggregateMultiple"
+        },
+        {
+         "profile": "party.expected_monthly_credits",
+         "floor": {
+          "param": "profileFloor"
+         }
+        }
+       ]
+      }
+     }
+    ]
+   }
+  ]
+ },
+ "severityRatio": {
+  "max": [
+   {
+    "div": [
+     {
+      "field": "transaction.amount"
+     },
+     {
+      "mul": [
+       {
+        "param": "singleMultiple"
+       },
+       {
+        "profile": "party.expected_monthly_credits",
+        "floor": {
+         "param": "profileFloor"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "div": [
+     {
+      "agg": "credits"
+     },
+     {
+      "mul": [
+       {
+        "param": "aggregateMultiple"
+       },
+       {
+        "profile": "party.expected_monthly_credits",
+        "floor": {
+         "param": "profileFloor"
+        }
+       }
+      ]
+     }
+    ]
+   }
+  ]
+ },
+ "explanation": "Credit activity of {credits:money} over {windowDays} days ({creditCount} credits) against an expected monthly level of {expected:money}; latest credit {anchorAmount:money} (this credit took the 30-day total over the limit)"
+}

@@ -1,0 +1,40 @@
+{
+  "ruleId": "TM-US-001",
+  "version": "1.0",
+  "name": "Potential Structuring",
+  "status": "ACTIVE",
+  "cadence": "DAILY",
+  "evaluate": "EVENT_TIME",
+  "typology": "STRUCTURING",
+  "severity": "HIGH",
+  "regulation": {
+    "framework": "BSA",
+    "references": ["31 U.S.C. 5324 (structuring)", "31 CFR 1010.311 (currency transaction reports)"],
+    "note": "Monitoring parameters are risk-based. The reporting threshold is a reference point, not a detection rule on its own. Mapping to be validated by Compliance."
+  },
+  "parameters": {"ctrThreshold": 10000, "minCount": 3, "windowHours": 24},
+  "entity": {"groupBy": "PARTY", "splitBy": ["direction"]},
+  "filters": {
+    "cashBelowThreshold": [
+      {"field": "transaction.is_cash", "operator": "EQUALS", "value": true},
+      {"field": "transaction.type", "operator": "IN", "value": ["CASH_DEPOSIT", "ATM_WITHDRAWAL"]},
+      {"field": "transaction.amount", "operator": "LESS_THAN", "value": {"param": "ctrThreshold"}}
+    ]
+  },
+  "anchor": {"filter": "cashBelowThreshold"},
+  "aggregations": {
+    "cnt": {"function": "COUNT", "filter": "cashBelowThreshold", "window": {"size": {"param": "windowHours"}, "unit": "HOURS"}},
+    "total": {"function": "SUM", "field": "transaction.amount", "filter": "cashBelowThreshold", "window": {"size": {"param": "windowHours"}, "unit": "HOURS"}},
+    "minAmt": {"function": "MIN", "field": "transaction.amount", "filter": "cashBelowThreshold", "window": {"size": {"param": "windowHours"}, "unit": "HOURS"}},
+    "maxAmt": {"function": "MAX", "field": "transaction.amount", "filter": "cashBelowThreshold", "window": {"size": {"param": "windowHours"}, "unit": "HOURS"}}
+  },
+  "match": {"all": [
+    {"left": {"agg": "cnt"}, "operator": "GREATER_THAN_OR_EQUAL", "right": {"param": "minCount"}},
+    {"left": {"agg": "total"}, "operator": "GREATER_THAN_OR_EQUAL", "right": {"param": "ctrThreshold"}}
+  ]},
+  "severityRatio": {"max": [
+    {"div": [{"agg": "cnt"}, {"param": "minCount"}]},
+    {"div": [{"agg": "total"}, {"param": "ctrThreshold"}]}
+  ]},
+  "explanation": "{cnt} cash transactions between {minAmt:money} and {maxAmt:money} totalling {total:money} within {windowHours} hours, each below the {ctrThreshold:money} reporting threshold"
+}

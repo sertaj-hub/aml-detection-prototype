@@ -1,0 +1,8 @@
+{
+  "policyId": "MVP-POLICY",
+  "version": "1.0",
+  "note": "MVP-only values. Production thresholds and points are calibrated separately (OQ-F13).",
+  "severityPoints": {"HIGH": 40, "MEDIUM": 30, "LOW": 15},
+  "severityFactor": {"perRatioUnit": 0.25, "cap": 1.5},
+  "dailyThreshold": 35
+}

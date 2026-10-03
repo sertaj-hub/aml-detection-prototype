@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | DRAFT v2 — scope and MQ-2..5 approved by the user ("Yes"); rules revised to the U.S. TM set, awaiting confirmation of rule parameters (RQ-1..RQ-8) |
+| Status | IMPLEMENTED (2026-10-03), with one open decision on TM-US-002 (see §13.4) |
 | Author | Claude (with the user, AML SME) |
 | Approver | |
 | Created | 2026-10-02 |
@@ -61,7 +61,7 @@ Parameters (thresholds, windows, floors) are **named parameters in the rule file
 - Evidence: the qualifying transactions, their times and amounts, count, sum, window, threshold, and the sentence "3 cash deposits between $2,900 and $4,800 totalling $11,400 within 24 hours, each below the $10,000 reporting threshold".
 - Note: $10,000 is the currency-reporting reference point, not a detection rule on its own (FinCEN: monitoring must be risk-based). Windows of several days are a common variant; the 7-day parameter set is run as a sensitivity in the backtest (RQ-3).
 
-**TM-US-002 Unusual High-Value Activity** (T3, evaluated at end of each business date) — BSA: suspicious-activity monitoring against the customer profile.
+**TM-US-002 Unusual High-Value Activity** (T3, `EVENT_TIME`, anchored on each external credit) — BSA: suspicious-activity monitoring against the customer profile.
 - Scope: external credits (`direction = CR`, `channel != INTERNAL`).
 - Grouping: primary party. Profile attribute: `party.expected_monthly_credits` (floored at `profileFloor`, 500).
 - Condition (either): **(a)** a single credit ≥ `singleMultiple` × expected monthly credits and ≥ `absoluteFloor`; **(b)** the trailing 30-day credit sum ≥ `aggregateMultiple` × expected monthly credits and ≥ `absoluteFloor`.
@@ -179,5 +179,49 @@ Rule parameters to confirm with the SME before coding:
 - [ ] **RQ-7** MVP severity points HIGH 40 / MEDIUM 30 and threshold 35: acceptable for the MVP?
 - [ ] **RQ-8** Defer TM-US-004/005 until a synthetic-data extension spec (`120`) adds correspondent and private-banking attributes?
 
-## 12. Implementation notes
-Not applicable until `IMPLEMENTED`.
+## 12. Refinements agreed on approval
+- **TM-US-002 is `EVENT_TIME`, anchored on each external credit**, not a end-of-day snapshot. A snapshot would re-flag a party every day without any new activity; anchoring on credits means a detection always contains new evidence. SNAPSHOT evaluation is therefore not needed in the MVP (it remains in `02` FR-29 for later).
+- **One detection per entity (and split) per business date**, formed from the matching anchor with the highest severity ratio (latest on ties); its trigger transactions are those in that anchor's window. Other matching anchors the same day are summarised in the run counts. (Limitation: evidence of weaker anchors the same day is not retained.)
+- **Novelty in EVENT_TIME rules.** Because every detection contains its own anchor transaction, which belongs to the current business date, a detection cannot normally be fully covered by earlier detections. Suppression (`SUPPRESSED_NO_NEW_EVIDENCE`) is implemented and tested, and becomes active for rules without a new anchor (SNAPSHOT/monthly) and after data corrections; the common EVENT_TIME outcome is `NEW_WITH_OVERLAP` when a pattern continues with another transaction.
+- **Derived catalogue fields**: `transaction.counterparty_relation` (`OWN` when the counterparty is `SELF_EXTERNAL`, when `counter_account_id` is set, or for `TRANSFER_IN/OUT`; otherwise `EXTERNAL`).
+- **Amounts** are held as exact `DECIMAL(18,2)`; windows are start-exclusive via a microsecond-precise range.
+
+## 13. Implementation notes
+
+### 13.1 What was built
+- Package `ruleengine/`: `rules.py` (JSON Schema + semantic validation, errors with JSON paths), `catalogue.py`, `compiler.py` (rule → SQL), `evaluate.py` (run, one detection per entity, evidence rebuild, reconciliation), `novelty.py`, `ids.py`, `policy.py`, `store.py` (SQLite, atomic alert creation, outbox), `publisher.py` (file sink stub, retry/FAILED/requeue), `engine.py` (daily run, party-level alerts, manifest, dry-run via rolled-back transaction), `data.py` (DuckDB over Parquet), `cli.py`.
+- Rules: `ruleengine/rules/TM-US-001..003.json`; policy `ruleengine/policy/mvp_policy.json`; proposal `ruleengine/rules_proposed/TM-US-002.json`.
+- Evaluation script `scripts/mvp_conformance.py` (reads labels; the engine does not). Run with `PYTHONPATH=. python3 scripts/mvp_conformance.py`.
+- Language addition during build: operand `sub` (a − b), needed for the "tipping credit" proposal.
+- Dependencies added: `duckdb`, `jsonschema`, `pytest`.
+
+### 13.2 Tests
+53 tests in `tests/ruleengine/`, each named after its acceptance criterion (MAC-1..MAC-20). Written first and failing (import error), then implemented. Mutation checks confirmed the tests catch: inclusive window start, `<=` instead of `<` at the threshold, and a missing rollback on alert failure. MAC-21/22 are informational (below).
+
+### 13.3 Results on the prototype data (Apr–Sep 2026, threshold 35, rules as approved)
+- **MAC-22 runtime**: 183 daily runs in ~83 s (≈0.45 s per day) on 1.25M transactions. Target (< 5 min) met. All runs SUCCEEDED.
+- **Detections**: TM-US-001 66 (31 parties); TM-US-002 7,528 (490 parties); TM-US-003 3. **Alerts: 3,751 for 340 parties**, of which 3,683 are TM-US-002 alone.
+- **MAC-21 structuring vs prototype R-DEP-01**: prototype 17 accounts, engine 31; both 15, only prototype 2, only engine 16. Labelled-suspicious share: prototype 47% (8/17), engine 35% (11/31). The engine finds 88% of what the prototype finds and adds 16 accounts (24-hour party-level window, direction split).
+- **TM-US-003** is rare on this data (3 detections, 2 labelled suspicious).
+- Party-level, all rules: precision 14%, recall 53% (47 of 88 suspicious parties) — but see 13.4: that recall comes from TM-US-002 noise.
+
+### 13.4 Open decision: TM-US-002 floods (needs the SME)
+With the approved parameters, every new credit re-fires the rule while a party's 30-day total stays above 3× expected credits, so ordinary customers (and the synthetic "legitimate spike" parties, by design) alert almost daily. Offline comparison from the stored detections (labels used only for this comparison):
+
+| Variant | Alerts | Parties | Labelled suspicious | Precision | Recall |
+|---|---|---|---|---|---|
+| v1.0 as approved (MEDIUM, threshold 35) | 3,751 | 340 | 47 | 14% | 53% |
+| v1.1 "tipping credit" only (MEDIUM, 35) | 434 | 268 | 22 | 8% | 25% |
+| v1.1 + TM-US-002 severity LOW (contributes only) | 68 | 31 | 10 | 32% | 11% |
+| v1.1 + MEDIUM, threshold 50 | 22 | 16 | 8 | 50% | 9% |
+
+Reading: TM-US-002 is a weak discriminator on this data, as expected for a profile-deviation rule with legitimate look-alikes. Options: (a) adopt v1.1 (`rules_proposed/`), which fires only on the credit that takes the 30-day total over the limit; (b) also make it LOW severity so it only contributes to a score with other rules; (c) recalibrate the multiples/floor (RQ-4). The shipped rule remains v1.0 until the SME decides. Overall recall is low with three rules (the prototype's 78% uses 15 rules plus ML), which is expected for an MVP.
+
+### 13.5 Limitations and deviations
+- One detection per entity and split per business date (strongest anchor); weaker anchors that day are not retained (§12).
+- EVENT_TIME only; SNAPSHOT and MONTHLY cadence are rejected/skipped.
+- No separate audit table; the `run`, `rule_execution` and `outbox_event` tables are the MVP audit trail.
+- Re-running a date is idempotent but does not detect that inputs changed (no reprocess/withdrawal in the MVP).
+- `alert_party` stores one role per secondary party.
+- Alert and detection ids are stored with SQLite types; PostgreSQL DDL still to be written.
+
